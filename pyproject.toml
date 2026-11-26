@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "funcpatch"
+version = "0.1.0"
+description = "Runtime function implementation override for Python — one target, one owner, zero source changes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "BSD-3-Clause"
+authors = [{ name = "funcpatch contributors" }]
+keywords = ["plugin", "monkey-patch", "override", "import-hook", "wrapt", "customization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    # resolve_owner / scoped_function_wrapper / find_wrapper / transient_function_wrapper
+    # 均自 wrapt 2.4.0 引入（见 wrapt docs/changes.rst）
+    "wrapt>=2.4",
+]
+
+[project.optional-dependencies]
+toml = ["tomli>=2.0; python_version<'3.11'"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "pytest-cov>=5.0", "ruff>=0.6", "basedpyright>=1.20"]
+
+[project.urls]
+Homepage = "https://github.com/isfangmk/funcpatch"
+Repository = "https://github.com/isfangmk/funcpatch"
+Issues = "https://github.com/isfangmk/funcpatch/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.basedpyright]
+include = ["src", "tests"]
+typeCheckingMode = "standard"
+pythonVersion = "3.10"
+reportDeprecated = true
+reportUnusedImport = true
+reportMissingImports = "warning"
+
+[tool.coverage.run]
+source = ["funcpatch"]
+branch = true
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
