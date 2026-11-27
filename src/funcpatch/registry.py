@@ -341,6 +341,17 @@ class Registry:
                 ConflictError,
             )
 
+        # enabled 关闭时不添加属性：add 模式没有原实现可回退，
+        # 语义上等同于"这次定制不启用"。
+        from ._enabled import resolve_enabled
+
+        if not resolve_enabled(chosen.enabled):
+            return self._reject("disabled", target, chosen.owner, report)
+
+        # 版本约束与废弃标记：与 replace / wrap 走同一套检查。
+        if not self._check_version_guards(target, chosen, report):
+            return False
+
         ok, reason = claim_target(
             target,
             chosen.owner,
@@ -363,6 +374,35 @@ class Registry:
             report.entries.append({"owner": chosen.owner, "target": target, "at": _timestamp()})
         self._emit("apply", {"target": target, "owner": chosen.owner})
         logger.info("补丁已应用（add）：target=%s owner=%s", target, chosen.owner)
+        return True
+
+    def _check_version_guards(
+        self, target: str, chosen: PatchSpec, report: AuditReport | None
+    ) -> bool:
+        """版本约束与废弃标记检查；replace / wrap / add 三种模式共用。
+
+        返回 False 表示已拒绝（拒绝原因已记入 report）。
+        """
+        # 部署包版本约束：不满足则拒绝应用（与 expect_hash 同级护栏）
+        if chosen.requires:
+            from ._requirements import check_requires
+
+            problems = check_requires(chosen.requires)
+            if problems:
+                self._reject("; ".join(problems), target, chosen.owner, report)
+                return False
+
+        # 废弃目标告警（不阻断）
+        if chosen.deprecated:
+            import warnings
+
+            from .exceptions import DeprecatedTargetWarning
+
+            warnings.warn(
+                f"deprecated patch target {target}: {chosen.deprecated}",
+                DeprecatedTargetWarning,
+                stacklevel=2,
+            )
         return True
 
     def _apply_locked(self, target: str, report: AuditReport | None) -> bool:
@@ -438,25 +478,9 @@ class Registry:
                 )
                 return self._reject(reason, target, chosen.owner, report)
 
-        # 部署包版本约束：不满足则拒绝应用（与 expect_hash 同级护栏）
-        if chosen.requires:
-            from ._requirements import check_requires
-
-            problems = check_requires(chosen.requires)
-            if problems:
-                return self._reject("; ".join(problems), target, chosen.owner, report)
-
-        # 废弃目标告警（不阻断）
-        if chosen.deprecated:
-            import warnings
-
-            from .exceptions import DeprecatedTargetWarning
-
-            warnings.warn(
-                f"deprecated patch target {target}: {chosen.deprecated}",
-                DeprecatedTargetWarning,
-                stacklevel=2,
-            )
+        # 版本约束与废弃标记：与 add 模式走同一套检查。
+        if not self._check_version_guards(target, chosen, report):
+            return False
 
         # 进程级占用检查：把"单一生效"从单实例提升到整个进程。
         # 安装前先声明占用，若已有其它 Registry 存活并占用该目标则拒绝，
