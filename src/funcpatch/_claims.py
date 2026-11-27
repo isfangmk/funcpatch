@@ -24,6 +24,8 @@ class _Claim:
     owner: str
     registry: weakref.ReferenceType[Any]
     key: str
+    # 目标字符串（不含 property 部分后缀），供占用方查询其补丁是否仍生效。
+    target: str = ""
 
 
 _LOCK = threading.RLock()
@@ -33,6 +35,25 @@ _CLAIMS: dict[str, _Claim] = {}
 def claim_key(target: str, property_part: str = "get") -> str:
     """占用键：property 的 get/set/delete 视为不同目标。"""
     return f"{target}#{property_part}" if property_part != "get" else target
+
+
+def _claim_is_effective(existing: _Claim) -> bool:
+    """判断一条占用记录是否仍然有效（占用方存活且其补丁仍实际生效）。
+
+    占用方 Registry 可能还活着，但它打的补丁可能已经失效——例如目标模块
+    被 reload，旧补丁随旧模块对象一并消失。此时占用记录是陈旧的，
+    不应继续阻止新实例接管。
+    """
+    live = existing.registry()
+    if live is None:
+        return False
+    checker = getattr(live, "is_applied", None)
+    if checker is None:
+        return True  # 非 Registry 的占用者无法判定，保守认为有效
+    try:
+        return bool(checker(existing.target))
+    except Exception:  # pragma: no cover - 判定失败时保守认为有效
+        return True
 
 
 def can_claim(
@@ -49,15 +70,20 @@ def can_claim(
     owner 为当前申请方，用于生成与 claim_target 一致的冲突说明。
     """
     key = claim_key(target, property_part)
+    # 有效性判定会回调占用方的 is_applied，可能触发 import 与加锁，
+    # 故放在锁外求值，避免与 Registry 的 RLock 形成锁顺序反转。
     with _LOCK:
         existing = _CLAIMS.get(key)
-        if existing is None:
-            return True, ""
-        live = existing.registry()
-        if live is not None:
-            if live is registry:
-                return True, ""
-            return False, _conflict_reason(existing.owner, owner)
+        live = existing.registry() if existing is not None else None
+
+    if existing is None:
+        return True, ""
+
+    if live is not None and live is not registry and _claim_is_effective(existing):
+        return False, _conflict_reason(existing.owner, owner)
+
+    # 占用方已消失，或它的补丁已失效（目标模块被 reload 等）：
+    # 若目标上仍残留 funcpatch 标记，说明补丁痕迹还在，需人工确认后再接管。
     if is_still_patched is not None and is_still_patched():
         return False, "target has a stale claim and is still patched"
     return True, ""
@@ -88,29 +114,37 @@ def claim_target(
     避免与 Registry 的 RLock 形成锁顺序反转。
     """
     key = claim_key(target, property_part)
-    # 先判断 stale 状态：只在可能陈旧时才在锁外调用回调。
+    # 先在锁外判定占用是否有效：有效性判定会回调占用方的 is_applied，
+    # 可能触发 import 与加锁，放在锁外避免与 Registry 的 RLock 锁顺序反转。
     with _LOCK:
         existing = _CLAIMS.get(key)
         live = existing.registry() if existing is not None else None
-        stale = existing is not None and live is None
 
-    if stale:
-        still_patched = is_still_patched()
-    else:
-        still_patched = False
+    blocked = False
+    stale_reason = ""
+    if existing is not None:
+        if live is not None and live is not registry:
+            if _claim_is_effective(existing):
+                return False, _conflict_reason(existing.owner, owner)
+            # 占用方仍在但补丁已失效：占用记录陈旧，允许接管。
+        elif live is None:
+            # 占用方已消失：若目标上仍有补丁痕迹，需人工确认后再接管。
+            if is_still_patched():
+                stale_reason = (
+                    f"target has a stale claim from owner={existing.owner} "
+                    "and is still patched; revert or clear claim first"
+                )
+                blocked = True
 
     with _LOCK:
         existing = _CLAIMS.get(key)
         if existing is not None:
             live = existing.registry()
-            if live is not None and live is not registry:
+            if live is not None and live is not registry and _claim_is_effective(existing):
                 return False, _conflict_reason(existing.owner, owner)
-            if live is None and still_patched:
-                return False, (
-                    f"target has a stale claim from owner={existing.owner} "
-                    "and is still patched; revert or clear claim first"
-                )
-        _CLAIMS[key] = _Claim(owner, weakref.ref(registry), key)
+            if blocked:
+                return False, stale_reason
+        _CLAIMS[key] = _Claim(owner, weakref.ref(registry), key, target)
         return True, ""
 
 

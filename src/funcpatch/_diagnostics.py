@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
 
-from ._descriptors import unwrap_descriptor
+from ._descriptors import PropertyPart, unwrap_descriptor
 
 if TYPE_CHECKING:
     from .registry import Registry
@@ -114,11 +114,30 @@ def unwrap(target: str) -> Any | None:
         return None
 
 
-def _resolve_func(target: str) -> Any | None:
+def is_marked(target: str, property_part: PropertyPart = "get") -> bool:
+    """目标当前属性上是否仍带 funcpatch 标记（不依赖 registry 状态）。
+
+    与 is_patched(target) 的区别：后者在传入 registry 时以 registry 为准，
+    这里只看函数上的实际标记，因此能反映"补丁是否仍然真的生效"。
+    目标模块被 reload 后，旧补丁失效，标记随之消失，这里即返回 False。
+
+    property_part 指定要检查的部分（get / set / delete）。property 的各部分
+    可以被不同 owner 独立打补丁，检查某一 part 时不应被其它 part 的标记
+    干扰。
+    """
+    func = _resolve_func(target, property_part)
+    if func is None:
+        return False
+    if getattr(func, PATCH_MARK, None) is not None:
+        return True
+    return is_wrapped_by(func, predicate=lambda f: getattr(f, PATCH_MARK, None) is not None)
+
+
+def _resolve_func(target: str, property_part: PropertyPart = "get") -> Any | None:
     """按目标字符串解析出可调用对象，描述符感知。
 
-    property → fget；classmethod/staticmethod → __func__；普通函数原样。
-    这样标记无论打在 replacement 还是描述符底层函数上都能被发现。
+    property → fget/fset/fdel（按 property_part）；classmethod/staticmethod → __func__；
+    普通函数原样。这样标记无论打在 replacement 还是描述符底层函数上都能被发现。
     """
     module, _sep, attr_path = target.partition(":")
     try:
@@ -128,14 +147,21 @@ def _resolve_func(target: str) -> Any | None:
             # 逐级用 getattr_static，避免触发任意描述符的用户代码
             obj = inspect.getattr_static(obj, part)
         attr = parts[-1]
-        # 关键：用 getattr_static 而非 getattr，property 目标不会执行 getter
+        # 关键：用 getattr_static 而非 getattr，property 不会执行 getter
         # （getter 可能有副作用或抛异常，诊断必须是只读的）。
         current = inspect.getattr_static(obj, attr)
-        # 优先按完整 part 路径取底层函数；property 默认取 getter。
+        # 先看指定的部分是否带标记；再看其它部分（标记可能打在包装链上）。
+        raw = unwrap_descriptor(current, property_part)  # type: ignore[arg-type]
+        if raw is not None and getattr(raw, PATCH_MARK, None) is not None:
+            return raw
         for part in ("get", "set", "delete"):
             raw = unwrap_descriptor(current, part)  # type: ignore[arg-type]
             if raw is not None and getattr(raw, PATCH_MARK, None) is not None:
                 return raw
-        return unwrap_descriptor(current, "get") or current
+        return (
+            unwrap_descriptor(current, property_part)
+            or unwrap_descriptor(current, "get")
+            or current
+        )
     except (ImportError, AttributeError, TypeError):
         return None

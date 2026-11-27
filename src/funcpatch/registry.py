@@ -32,7 +32,7 @@ from ._descriptors import (
     unwrap_descriptor,
     wrap_with_descriptor,
 )
-from ._diagnostics import is_patched, mark_replacement
+from ._diagnostics import is_marked, is_patched, mark_replacement
 from ._enabled import make_dispatcher
 from .audit import AuditReport, _timestamp
 from .config import SelectionConfig
@@ -356,7 +356,7 @@ class Registry:
             target,
             chosen.owner,
             self,
-            lambda: is_patched(target),
+            lambda: is_marked(target, chosen.property_part),
             property_part=chosen.property_part,
         )
         if not ok:
@@ -470,7 +470,7 @@ class Registry:
             target,
             self,
             property_part=chosen.property_part,
-            is_still_patched=lambda: is_patched(target),
+            is_still_patched=lambda: is_marked(target, chosen.property_part),
             owner=chosen.owner,
         )
         if not can_take:
@@ -506,7 +506,7 @@ class Registry:
             target,
             chosen.owner,
             self,
-            lambda: is_patched(target),
+            lambda: is_marked(target, chosen.property_part),
             property_part=chosen.property_part,
         )
         if not ok:
@@ -786,7 +786,19 @@ class Registry:
         return unwrap_descriptor(current, applied.spec.property_part)
 
     def is_applied(self, target: str) -> bool:
-        return target in self._applied
+        """目标当前是否真的被本 Registry 的补丁覆盖。
+
+        除了查内部记录，还核对目标属性上是否仍带 funcpatch 标记：
+        目标模块被 reload 后，旧补丁随旧模块对象一并失效，
+        此时内部记录仍在，但补丁实际已不生效——只查记录会给出错误结论。
+        """
+        if target not in self._applied:
+            return False
+        applied = self._applied[target]
+        if applied.spec.mode == "add":
+            # add 模式没有标记可查，改为核对属性是否仍在宿主对象上。
+            return hasattr(applied.parent, applied.attr)
+        return is_marked(target)
 
     # ------------------------------------------------------------------ 预演
 
@@ -832,7 +844,7 @@ class Registry:
                     target,
                     self,
                     property_part=chosen.property_part,
-                    is_still_patched=lambda t=target: is_patched(t),
+                    is_still_patched=lambda t=target, p=chosen.property_part: is_marked(t, p),
                     owner=chosen.owner,
                 )
                 if not ok:
