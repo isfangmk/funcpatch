@@ -68,7 +68,7 @@ from .registry import ApplyResult, Registry
 from .spec import PatchSpec, dependency_hash, source_hash
 from .validation import ValidationResult, validate, validate_spec
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # pyright: reportUnsupportedDunderAll=false
 # 桥接层 50 个名称用展开合并，静态检查器不解析 * 展开，故本地关闭该提示。

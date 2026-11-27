@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-11-27
+
+修复两处缺陷。
+
+### 修复
+
+- **目录扫描认不出容器式补丁声明**：模块级 `SPECS = [PatchSpec(...), ...]`
+  这类声明，entry point 发现能识别，目录扫描却完全发现不了 —— 两种发现机制
+  对同一份声明给出不一致的结果。现目录扫描同样识别 list / tuple / set /
+  frozenset 容器里的 PatchSpec，与 entry point 行为对齐。
+- **`create_patches` 在目标已被补丁接管时崩溃**：补丁生效后目标位置上装的是
+  wrapt 代理，而 wrapt 的 ObjectProxy 不实现 `__copy__`，`copy.copy()` 抛
+  `NotImplementedError: object proxy must define __copy__()`。现 `get_base()`
+  会解开 wrapt 包装链、取到最底层的原始实现，解包委托 wrapt 自己的
+  `wrapt.patches.unwrapped()`（它对链深度有保护，不会自己实现链遍历）。
+
 ## [0.1.0] - 2026-11-27
 
 首次公开发布。
@@ -129,4 +145,5 @@
 - 发布由 tag 触发的 GitHub Actions 完成：校验版本一致性、重跑质量门、
   发布到 PyPI 并创建 GitHub Release，发布说明从 CHANGELOG 自动生成。
 
+[0.1.1]: https://github.com/isfangmk/funcpatch/releases/tag/v0.1.1
 [0.1.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.1.0

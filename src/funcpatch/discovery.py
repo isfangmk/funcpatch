@@ -14,7 +14,7 @@ import logging
 import pkgutil
 from collections.abc import Callable, Iterable
 from types import ModuleType
-from typing import Any
+from typing import Any, TypeGuard
 
 from .decorators import collect_patched
 from .spec import PatchSpec
@@ -43,14 +43,53 @@ def _record_origin(spec: PatchSpec, ep: Any) -> None:
 
 
 def _collect_specs(module: ModuleType) -> list[PatchSpec]:
-    """从模块中收集所有 PatchSpec：数据式实例 + 装饰式声明。"""
+    """从模块中收集所有 PatchSpec：数据式实例 + 容器式声明 + 装饰式声明。
+
+    三种声明方式都要认：
+
+    * 单条 ``PatchSpec`` 实例（模块级变量）
+    * 容器（``list`` / ``tuple`` / ``set`` / ``frozenset``）里的 PatchSpec ——
+      如 ``SPECS = [PatchSpec(...), ...]``
+    * ``@patch`` / ``@patches`` 装饰式声明
+
+    容器支持是必要的：entry point 侧一直支持返回可迭代对象，两种发现机制
+    对同一份声明必须给出一致结果，否则「用目录扫描能发现、改成 entry
+    point 就发现不了」这类不一致会让人无从排查。
+    """
     specs: list[PatchSpec] = []
     for _name, obj in vars(module).items():
         if isinstance(obj, PatchSpec):
             specs.append(obj)
+        elif _is_spec_container(obj):
+            specs.extend(spec for spec in obj if isinstance(spec, PatchSpec))
     # 装饰式 @patch 声明
     specs.extend(collect_patched(module))
     return specs
+
+
+def _is_spec_container(obj: Any) -> TypeGuard[Iterable[PatchSpec]]:
+    """判断对象是否是"装着 PatchSpec 的容器"（用于扫描模块成员）。
+
+    只认 list / tuple / set / frozenset 这类具体容器：模块里的任意可迭代对象
+    未必是"一串补丁"（自定义可迭代对象很常见），逐个 isinstance 检查纯属浪费。
+
+    排除 str / bytes / dict —— 它们虽是可迭代，但成员不会是 PatchSpec，
+    dict 的键值语义也与"一串补丁"不同。
+    """
+    if isinstance(obj, (str, bytes, dict)):
+        return False
+    return isinstance(obj, (list, tuple, set, frozenset))
+
+
+def _is_any_iterable(obj: Any) -> TypeGuard[Iterable[PatchSpec]]:
+    """判断对象是否是可迭代对象（用于 entry point 返回值）。
+
+    entry point 可以指向生成器这类一次性可迭代对象，所以这里接受任意
+    Iterable —— 只要不是 str / bytes / dict（它们的成员不会是 PatchSpec）。
+    """
+    if isinstance(obj, (str, bytes, dict)):
+        return False
+    return isinstance(obj, Iterable)
 
 
 def _iter_package_modules(package: str, recursive: bool) -> Iterable[str]:
@@ -127,7 +166,7 @@ def discover_from_entry_points(group: str = ENTRY_POINT_GROUP) -> list[PatchSpec
         if isinstance(obj, PatchSpec):
             _record_origin(obj, ep)
             specs.append(obj)
-        elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, dict)):
+        elif _is_any_iterable(obj):
             for spec in obj:
                 if isinstance(spec, PatchSpec):
                     _record_origin(spec, ep)

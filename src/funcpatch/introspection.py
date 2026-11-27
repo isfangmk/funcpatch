@@ -13,6 +13,9 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+import wrapt
+import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
+
 
 def get_attribute(obj: Any, name: str) -> Any:
     """描述符安全地取属性：沿 MRO 用 object.__getattribute__ 查找。
@@ -33,9 +36,28 @@ def get_attribute(obj: Any, name: str) -> Any:
 def get_base(obj: Any) -> Any:
     """递归解包到最底层的可调用对象。
 
-    解开 bound method 的 __func__、classmethod/staticmethod 的 __func__、
-    property 的 fget，直到不可再解包。用于诊断/装饰式声明定位真实函数。
+    解开四类包装：
+
+    * bound method 的 ``__func__``
+    * classmethod / staticmethod 的 ``__func__``
+    * property 的 ``fget``
+    * **wrapt 包装链**（补丁生效后目标位置上装的是 ``FunctionWrapper``）
+
+    最后一条是必需的：补丁生效后，模块上的成员已是 wrapt 代理。不解开它，
+    调用方拿到的就是代理而非底层实现 —— 代理不可 ``copy.copy``
+    （wrapt 的 ObjectProxy 不实现 ``__copy__``），拿它做批量生成会直接抛
+    ``NotImplementedError``。
+
+    解包 wrapt 链用 wrapt 自己的 ``wrapt.patches.unwrapped()``，不自己实现
+    链遍历 —— 它对链深度有保护（超过 limit 抛 ``WrapperChainTooDeepError``），
+    自己写容易在异常包装链上死循环。
     """
+    current = _unwrap_descriptors(obj)
+    return _unwrap_wrapt(current)
+
+
+def _unwrap_descriptors(obj: Any) -> Any:
+    """解开 bound method / classmethod / staticmethod / property。"""
     seen: set[int] = set()
     current = obj
     while id(current) not in seen:
@@ -52,6 +74,20 @@ def get_base(obj: Any) -> Any:
         else:
             break
     return current
+
+
+def _unwrap_wrapt(obj: Any) -> Any:
+    """解开 wrapt 包装链，返回最底层的原始对象。
+
+    只在对象确实是 wrapt 代理时才处理；普通函数直接返回自身。
+    """
+    if not isinstance(obj, wrapt.BaseObjectProxy):
+        return obj
+    try:
+        return wrapt_patches.unwrapped(obj)
+    except Exception:
+        # 链异常深/结构异常时保留原代理，不让诊断工具因解包失败而崩。
+        return obj
 
 
 def get_members(
