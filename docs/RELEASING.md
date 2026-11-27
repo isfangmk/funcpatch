@@ -68,8 +68,24 @@ python -m venv /tmp/fp-release-check
 
 ## 8. 发布
 
+发布由 GitHub Actions 完成：推送 tag 触发 `.github/workflows/release.yml`，
+该工作流会校验 tag 与包版本一致、重跑完整质量门、发布到 PyPI 并创建 GitHub Release。
+
 ```bash
-python -m twine upload dist/*
+git tag v0.1.0
+git push origin main --tags
 ```
 
-发布后：在 GitHub 创建对应 tag 与 Release，粘贴 CHANGELOG 条目。
+前置条件：仓库已配置 secret `PYPI_API_TOKEN`（PyPI 的 API token，
+在仓库 Settings → Secrets and variables → Actions 中添加）。
+
+推送 tag 后关注 Actions 运行结果：<https://github.com/isfangmk/funcpatch/actions>
+
+也可以手动触发该工作流（workflow_dispatch 输入 tag）。
+
+若改用本机直接发布：
+
+```bash
+python -m twine upload dist/*
+gh release create v0.1.0 --generate-notes
+```

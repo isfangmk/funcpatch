@@ -3,10 +3,16 @@
 ## 安装
 
 ```bash
+pip install funcpatch
+```
+
+从 GitHub 安装：
+
+```bash
 pip install "funcpatch @ git+https://github.com/isfangmk/funcpatch.git"
 ```
 
-尚未发布到 PyPI；开发时可加 `--editable` 并装上可选依赖：
+开发时可加 `--editable` 并装上可选依赖：
 
 ```bash
 pip install -e ".[dev,toml,web]"

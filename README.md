@@ -1,5 +1,9 @@
 # funcpatch
 
+[![PyPI](https://img.shields.io/pypi/v/funcpatch.svg)](https://pypi.org/project/funcpatch/)
+[![Python](https://img.shields.io/pypi/pyversions/funcpatch.svg)](https://pypi.org/project/funcpatch/)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+
 **在不修改任何源码的前提下，用插件完整替换函数实现。一个目标函数，一次部署，只有一个 owner 生效。**
 
 funcpatch 面向这样的场景：同一套核心代码要交付给多个客户，每个客户都要**大量修改某些函数的内部逻辑**。你不想改主分支、不想为每个客户 fork、也不想让多个客户的补丁互相污染。funcpatch 让每个客户作为独立补丁包存在，部署时明确指定哪个 owner 生效。
@@ -97,7 +101,13 @@ funcpatch 面向这样的场景：同一套核心代码要交付给多个客户�
 
 ## 快速开始
 
-从 GitHub 安装（尚未发布到 PyPI）：
+从 PyPI 安装：
+
+```bash
+pip install funcpatch
+```
+
+从 GitHub 安装：
 
 ```bash
 pip install "funcpatch @ git+https://github.com/isfangmk/funcpatch.git"

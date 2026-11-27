@@ -3,7 +3,9 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.1.0] - 2026-11-27
+
+> 首次公开发布。以下内容按开发顺序汇总：最早的框架搭建列在末尾，其后的能力演进与修复依次向前。
 
 ### 新增
 
@@ -108,7 +110,7 @@
 - pytest 固定 `--basetemp` 到仓库内目录，避免系统临时目录不可写时
   `tmp_path` fixture 抛 PermissionError 而掩盖真实测试结果。
 
-## [0.3.0] - 2026-11-26
+### 能力演进：治理与安全（开发期 0.3.0）
 
 ### 修复
 
@@ -160,7 +162,7 @@
   `find_patches(recursive=True)` 递归被跳过、签名绑定对 `*args` 的误报。
 - ruff / basedpyright 全部通过。
 
-## [0.2.0] - 2026-11-26
+### 能力演进：补全（开发期 0.2.0）
 
 ### 修复
 
@@ -246,7 +248,7 @@
 - 新增 `tests/test_audit_fixes.py` 覆盖上述每个缺陷。
 - 构建、干净 venv 安装、CLI 冒烟、`twine check` 全部通过。
 
-## [0.1.0] - 2026-11-26
+### 能力演进：基础（开发期 0.1.0）
 
 ### 新增
 
@@ -266,7 +268,4 @@
 - CI：Python 3.10-3.13 矩阵，ruff + basedpyright + pytest。
 - 28 个测试，含 post-import-hook 端到端与边界场景。
 
-[Unreleased]: https://github.com/isfangmk/funcpatch/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.3.0
-[0.2.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.1.0
