@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import warnings
 from dataclasses import dataclass, field
@@ -181,9 +182,13 @@ def validate_spec(
 
     if spec.mode == "add":
         # add 模式要求目标属性原本不存在；验证父对象可解析即可。
-        import importlib
-
-        module_obj = importlib.import_module(spec.target_module)
+        try:
+            module_obj = importlib.import_module(spec.target_module)
+        except Exception as exc:
+            # 目标模块导入失败：报告问题而不是让异常中断整批校验。
+            result.ok = False
+            result.problems.append(f"target module import failed: {type(exc).__name__}: {exc}")
+            return result
         parent_path, _sep, final_attr = spec.target_attr.rpartition(".")
         try:
             if parent_path:
