@@ -170,6 +170,9 @@ PatchSpec(
 PatchSpec(..., enabled=lambda: feature_flag_is_on())
 ```
 
+各模式语义一致：补丁仍然安装，只在调用时旁路到原实现。`mode="add"` 例外——
+它没有原实现可回退，因此 `enabled=False` 时不会添加该属性。
+
 ## 作用域与临时补丁
 
 不写入 Registry 的持久状态，仅在特定范围生效并自动回滚：
