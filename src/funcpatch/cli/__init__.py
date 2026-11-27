@@ -59,8 +59,11 @@ def _cmd_claims(_args: argparse.Namespace) -> int:
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
     specs = discover_all(args.package)
-    results = validate(specs)
+    # 传入配置，校验才会检查"配置的 owner 是否命中某条补丁"——
+    # 否则部署配置了 owner 却没有任何补丁命中时，校验仍会报通过。
+    results = validate(specs, config=cfg)
     print(json.dumps([r.to_dict() for r in results], ensure_ascii=False, indent=2))
     return 0 if all(r.ok for r in results) else 1
 
@@ -124,6 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_cmd = sub.add_parser("validate", help="校验补丁 spec（只读）")
     validate_cmd.add_argument("--package", default="funcpatch.patches")
+    validate_cmd.add_argument("--config", default=None)
     validate_cmd.set_defaults(func=_cmd_validate)
 
     hash_cmd = sub.add_parser("hash", help="批量计算目标源码/依赖 hash")
