@@ -16,6 +16,7 @@ import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
 
 from ._descriptors import unwrap_descriptor
 from ._requirements import check_requires
+from ._targeting import resolve_original
 from .exceptions import DeprecatedTargetWarning, FunCPatchWarning
 from .spec import PatchSpec, dependency_hash, source_hash
 
@@ -221,6 +222,10 @@ def validate_spec(
         result.ok = False
         result.problems.append(f"no callable for part {spec.property_part!r}")
         return result
+
+    # 目标已被某个 Registry 接管时，当前位置上的对象是替代实现，
+    # 直接取源码得到的是替代实现的 hash；回溯到原实现再比对。
+    raw = resolve_original(spec.target, spec.property_part, raw)
 
     if spec.expect_hash:
         actual = source_hash(raw)

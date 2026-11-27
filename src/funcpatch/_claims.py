@@ -41,10 +41,12 @@ def can_claim(
     *,
     property_part: str = "get",
     is_still_patched: Callable[[], bool] | None = None,
+    owner: str = "",
 ) -> tuple[bool, str]:
     """只读判定 registry 能否占用目标，不修改任何状态。
 
     供 plan() 复用 apply() 的同一套判定，避免出现"plan 说能应用、apply 却拒绝"。
+    owner 为当前申请方，用于生成与 claim_target 一致的冲突说明。
     """
     key = claim_key(target, property_part)
     with _LOCK:
@@ -55,10 +57,21 @@ def can_claim(
         if live is not None:
             if live is registry:
                 return True, ""
-            return False, f"target claimed by owner={existing.owner}"
+            return False, _conflict_reason(existing.owner, owner)
     if is_still_patched is not None and is_still_patched():
         return False, "target has a stale claim and is still patched"
     return True, ""
+
+
+def _conflict_reason(existing_owner: str, current_owner: str) -> str:
+    """生成统一的冲突说明。
+
+    只读判定（can_claim）与实际占用（claim_target）必须给出同样的文案，
+    否则同一次冲突在 plan 与 apply 中会呈现为两种不同的原因。
+    """
+    if current_owner:
+        return f"target already claimed by owner={existing_owner}; current owner={current_owner}"
+    return f"target already claimed by owner={existing_owner}"
 
 
 def claim_target(
@@ -91,10 +104,7 @@ def claim_target(
         if existing is not None:
             live = existing.registry()
             if live is not None and live is not registry:
-                return False, (
-                    f"target already owned by registry owner={existing.owner}; "
-                    f"current owner={owner}"
-                )
+                return False, _conflict_reason(existing.owner, owner)
             if live is None and still_patched:
                 return False, (
                     f"target has a stale claim from owner={existing.owner} "
@@ -111,6 +121,20 @@ def release_target(target: str, registry: Any, *, property_part: str = "get") ->
         existing = _CLAIMS.get(key)
         if existing is not None and existing.registry() is registry:
             del _CLAIMS[key]
+
+
+def claim_holder(target: str, property_part: str = "get") -> Any | None:
+    """返回当前占用该目标的 Registry 实例；无人占用返回 None。
+
+    用于在目标已被别的 Registry 接管时，仍能取到原始实现
+    （目标位置上的对象此时已是替代实现，直接取会得到替代实现的源码）。
+    """
+    key = claim_key(target, property_part)
+    with _LOCK:
+        existing = _CLAIMS.get(key)
+        if existing is None:
+            return None
+        return existing.registry()
 
 
 def clear_claim(target: str, *, property_part: str = "get") -> bool:

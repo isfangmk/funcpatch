@@ -51,7 +51,7 @@ def test_cross_registry_second_apply_rejected():
     report = AuditReport()
     assert r2.apply(TARGET, report) is False
     assert _target.build_headers()["X-Source"] == "A"
-    assert any("owned by registry" in r["reason"] for r in report.rejections)
+    assert any("claimed by owner=a" in r["reason"] for r in report.rejections)
 
     # 清理：先回滚才释放占用
     assert r1.revert(TARGET) is True

@@ -461,7 +461,24 @@ class Registry:
         if isinstance(original, property):
             _baseline_property(target, original)
 
-        # 版本校验：主分支函数被改过则拒绝应用，避免静默失效
+        # 进程级占用检查：把"单一生效"从单实例提升到整个进程。
+        # 先做只读判定：目标若已被其它 Registry 占用，真实原因就是冲突，
+        # 必须在版本校验之前报告，否则会被"hash mismatch"掩盖而误导排查。
+        from ._claims import can_claim
+
+        can_take, claim_reason = can_claim(
+            target,
+            self,
+            property_part=chosen.property_part,
+            is_still_patched=lambda: is_patched(target),
+            owner=chosen.owner,
+        )
+        if not can_take:
+            return self._reject(claim_reason, target, chosen.owner, report, ConflictError)
+
+        # 版本校验：主分支函数被改过则拒绝应用，避免静默失效。
+        # 目标已被别的 Registry 接管时，真实原因是冲突，已由上面的占用检查拦下；
+        # 因此这里的 raw_original 就是主分支原实现，hash 比对是准确的。
         if chosen.expect_hash:
             actual = source_hash(raw_original)
             if actual != chosen.expect_hash:
@@ -482,9 +499,9 @@ class Registry:
         if not self._check_version_guards(target, chosen, report):
             return False
 
-        # 进程级占用检查：把"单一生效"从单实例提升到整个进程。
-        # 安装前先声明占用，若已有其它 Registry 存活并占用该目标则拒绝，
-        # 避免后 apply 的补丁静默覆盖前者。
+        # 占用声明：把"单一生效"从单实例提升到整个进程。
+        # 上面已做过只读判定（can_claim），这里在锁内实际占用，
+        # 避免后 apply 的补丁静默覆盖先 apply 的补丁。
         ok, reason = claim_target(
             target,
             chosen.owner,
@@ -816,6 +833,7 @@ class Registry:
                     self,
                     property_part=chosen.property_part,
                     is_still_patched=lambda t=target: is_patched(t),
+                    owner=chosen.owner,
                 )
                 if not ok:
                     # 陈旧占用：can_claim 用通用文案，这里补全 owner 便于诊断
