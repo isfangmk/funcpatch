@@ -1,7 +1,7 @@
 # funcpatch
 
-[![PyPI](https://img.shields.io/pypi/v/funcpatch.svg)](https://pypi.org/project/funcpatch/)
-[![Python](https://img.shields.io/pypi/pyversions/funcpatch.svg)](https://pypi.org/project/funcpatch/)
+[![PyPI](https://img.shields.io/pypi/v/funcpatch.svg?maxAge=86400)](https://pypi.org/project/funcpatch/)
+[![Python](https://img.shields.io/pypi/pyversions/funcpatch.svg?maxAge=86400)](https://pypi.org/project/funcpatch/)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
 **在不修改任何源码的前提下，用插件完整替换函数实现。一个目标函数，一次部署，只有一个 owner 生效。**
