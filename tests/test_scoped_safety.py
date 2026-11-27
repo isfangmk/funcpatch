@@ -111,17 +111,37 @@ def test_transient_releases_claim_after_call():
 
 
 def test_transient_hash_mismatch_rejected():
+    """装饰时即校验：配置错误应在装饰处暴露，而不是等到调用时。"""
+
     def impl(name):
         return f"patched-{name}"
 
     spec = PatchSpec("a", "_target", "greet", impl, expect_hash="deadbeef")
 
+    with pytest.raises(ValueError, match="版本校验失败"):
+        transient_patch("_target", "greet", spec)
+
+
+def test_transient_hash_mismatch_rejected_at_call_time():
+    """装饰之后目标才被改动时，调用时同样应拒绝。"""
+    from funcpatch.spec import source_hash
+
+    def impl(name):
+        return f"patched-{name}"
+
+    spec = PatchSpec("a", "_target", "greet", impl, expect_hash=source_hash(_target.greet))
+
     @transient_patch("_target", "greet", spec)
     def call_greet():
         return _target.greet("x")
 
-    with pytest.raises(ValueError, match="版本校验失败"):
-        call_greet()
+    original = _target.greet
+    try:
+        _target.greet = lambda name: "changed"  # noqa: B010
+        with pytest.raises(ValueError, match="版本校验失败"):
+            call_greet()
+    finally:
+        _target.greet = original  # noqa: B010
 
 
 def test_transient_reentrant_call_no_conflict():
@@ -152,3 +172,38 @@ def test_transient_reentrant_call_no_conflict():
     assert target not in claims_snapshot()
     assert _target.greet("x") == "hello x"
     clear_all()
+
+
+def test_scoped_respects_requires_constraint():
+    """部署版本约束不满足时，作用域补丁应拒绝应用。"""
+    spec = PatchSpec("a", "_target", "greet", lambda name: "patched", requires=("wrapt>=999",))
+    with pytest.raises(ValueError, match="版本约束不满足"):
+        with scoped_patch("_target", "greet", spec):
+            pass
+
+
+def test_scoped_warns_on_deprecated_target():
+    """废弃目标应发出告警（与持久化补丁一致）。"""
+    from funcpatch import DeprecatedTargetWarning
+
+    spec = PatchSpec("a", "_target", "greet", lambda name: "patched", deprecated="改用 greet2")
+    with pytest.warns(DeprecatedTargetWarning):
+        with scoped_patch("_target", "greet", spec):
+            pass
+
+
+def test_scoped_respects_expect_deps_hash():
+    """依赖闭包校验同样适用于作用域补丁。"""
+    spec = PatchSpec(
+        "a", "_target", "greet", lambda name: "patched", expect_deps_hash="0000000000000000"
+    )
+    with pytest.raises(ValueError, match="依赖版本校验失败"):
+        with scoped_patch("_target", "greet", spec):
+            pass
+
+
+def test_transient_respects_requires_constraint():
+    """部署版本约束不满足时，临时补丁也应拒绝应用。"""
+    spec = PatchSpec("a", "_target", "greet", lambda name: "patched", requires=("wrapt>=999",))
+    with pytest.raises(ValueError, match="版本约束不满足"):
+        transient_patch("_target", "greet", spec)

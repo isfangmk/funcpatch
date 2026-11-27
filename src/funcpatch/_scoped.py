@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 import logging
 import threading
+import warnings
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
@@ -28,8 +29,10 @@ from ._claims import claim_target, release_target
 from ._descriptors import unwrap_descriptor
 from ._diagnostics import is_marked
 from ._enabled import resolve_enabled
+from ._requirements import check_requires
 from ._suppression import wrap_enabled
-from .spec import PatchSpec, source_hash
+from .exceptions import DeprecatedTargetWarning
+from .spec import PatchSpec, dependency_hash, source_hash
 
 logger = logging.getLogger("funcpatch.scoped")
 
@@ -75,7 +78,12 @@ class _ScopedOwner:
 
 
 def _validate_scoped(spec: PatchSpec, target_module: str, target_attr: str) -> None:
-    """作用域补丁也做 hash 校验，避免绕过安全约束。"""
+    """作用域补丁也做版本校验，避免绕过安全约束。
+
+    与持久化补丁一样受依赖闭包校验（expect_deps_hash）、部署版本约束
+    （requires）与废弃告警（deprecated）约束：否则 CI 校验通过、运行时
+    行为却不一致。
+    """
     module = importlib.import_module(target_module)
     try:
         _parent, _attr, current = resolve_path(module, target_attr)
@@ -93,6 +101,25 @@ def _validate_scoped(spec: PatchSpec, target_module: str, target_attr: str) -> N
                 f"版本校验失败 {target_module}:{target_attr}: "
                 f"expect={spec.expect_hash} actual={actual}"
             )
+
+    if spec.expect_deps_hash:
+        actual_deps = dependency_hash(raw)
+        if actual_deps != spec.expect_deps_hash:
+            raise ValueError(
+                f"依赖版本校验失败 {target_module}:{target_attr}: "
+                f"expect={spec.expect_deps_hash} actual={actual_deps}"
+            )
+
+    problems = check_requires(spec.requires)
+    if problems:
+        raise ValueError(f"版本约束不满足 {target_module}:{target_attr}: {'; '.join(problems)}")
+
+    if spec.deprecated:
+        warnings.warn(
+            f"deprecated patch target {target_module}:{target_attr}: {spec.deprecated}",
+            DeprecatedTargetWarning,
+            stacklevel=3,
+        )
 
 
 def _acquire_claim(target: str, spec: PatchSpec, owner: _ScopedOwner) -> None:
@@ -144,6 +171,10 @@ def transient_patch(
     module = importlib.import_module(target_module)
     target = f"{target_module}:{target_attr}"
     wrapper = _wrapper_from_spec(spec)
+
+    # 装饰时即校验一次：配置错误应在装饰处暴露，而不是等到被装饰函数
+    # 第一次被调用时。调用时仍会再校验一次，因为目标可能在此期间变化。
+    _validate_scoped(spec, target_module, target_attr)
 
     # 一个共享 owner + 线程安全活跃计数：
     #   - 单线程递归：thread-local depth 保证只在最外层 acquire/release；

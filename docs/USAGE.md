@@ -185,8 +185,10 @@ with scoped_patch("app.core.config", "Settings.build_headers", spec):
 def do_something(): ...  # 仅该函数执行期间生效
 ```
 
-它们同样校验 `expect_hash` 并检查进程占用，只是占用只在作用域/调用期间持有，
+它们同样校验 `expect_hash` / `expect_deps_hash`、检查部署版本约束（`requires`）、
+进程占用与废弃告警（`deprecated`），只是占用只在作用域/调用期间持有，
 退出即释放；可用于测试隔离而不必 `bootstrap()`。
+`transient_patch` 在装饰时即完成校验，配置错误会在装饰处直接暴露。
 
 ## 装饰式声明
 

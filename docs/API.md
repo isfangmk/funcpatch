@@ -176,6 +176,7 @@ funcpatch hash --package mypatches
 
 - `scoped_patch(module, attr, spec)`：with 块内生效；校验 hash、检查占用。
 - `transient_patch(module, attr, spec)`：被装饰函数调用期间生效；同样校验。
+  装饰时即完成校验，配置错误在装饰处直接暴露。
 
 ## 诊断
 
