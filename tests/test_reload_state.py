@@ -107,3 +107,45 @@ def test_live_conflict_still_blocked_when_patch_effective():
         reg_b.revert_all()
         clear_all()
         importlib.reload(_reload_target)
+
+
+def test_reapply_after_reload_reinstalls_patch():
+    """reload 后再次 apply 应重新安装补丁，而不是谎报成功。
+
+    wrapt 的后导入钩子只在模块首次导入时触发，reload 不会重新触发，
+    因此补丁不会自动恢复；再次 apply 必须真正把它装回去。
+    """
+    clear_all()
+    reg = _reg("a", "patched")
+    assert reg.apply(TARGET) is True
+    try:
+        importlib.reload(_reload_target)
+        assert _reload_target.build_headers()["X-Source"] == "original"
+
+        # 再次 apply：应真正重新安装
+        assert reg.apply(TARGET) is True
+        assert _reload_target.build_headers()["X-Source"] == "patched"
+        assert reg.is_applied(TARGET) is True
+
+        # 回滚应恢复到新模块的原实现
+        assert reg.revert(TARGET) is True
+        assert _reload_target.build_headers()["X-Source"] == "original"
+    finally:
+        reg.revert_all()
+        clear_all()
+        importlib.reload(_reload_target)
+
+
+def test_apply_is_idempotent_when_patch_effective():
+    """补丁仍生效时重复 apply 应保持幂等，不重复安装。"""
+    clear_all()
+    reg = _reg("a", "patched")
+    try:
+        assert reg.apply(TARGET) is True
+        first = _reload_target.build_headers
+        assert reg.apply(TARGET) is True
+        assert _reload_target.build_headers is first
+    finally:
+        reg.revert_all()
+        clear_all()
+        importlib.reload(_reload_target)

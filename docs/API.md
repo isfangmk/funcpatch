@@ -132,6 +132,8 @@ funcpatch hash --package mypatches
   `is_applied` 反映补丁**当前是否真的生效**：除查内部记录外，还核对目标属性上
   是否仍带补丁标记——目标模块被 `importlib.reload` 重建后旧补丁已失效，
   此时返回 `False`。
+  目标模块被 reload 后补丁不会自动恢复（wrapt 的后导入钩子只在模块**首次**
+  导入时触发），再次调用 `apply(target)` 会重新安装补丁。
 - `plan(*, include_diff=False) -> list[dict]`：预演每个目标（含占用冲突检查）。注意：hash 校验可能需要
   import 目标模块，该 import 可能触发已注册的后导入钩子。
   `include_diff=True` 时，额外为 `replace` 模式的补丁生成 unified diff（键 `diff`），

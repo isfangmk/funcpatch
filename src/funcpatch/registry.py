@@ -406,8 +406,8 @@ class Registry:
         return True
 
     def _apply_locked(self, target: str, report: AuditReport | None) -> bool:
-        if target in self._applied:
-            return True  # 幂等
+        if self.is_applied(target):
+            return True  # 幂等：补丁当前确实生效
         self._record_undo(target)
 
         if not self.config.enabled:
