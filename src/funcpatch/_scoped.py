@@ -26,7 +26,7 @@ import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
 
 from ._claims import claim_target, release_target
 from ._descriptors import unwrap_descriptor
-from ._diagnostics import is_patched
+from ._diagnostics import is_marked
 from ._enabled import resolve_enabled
 from ._suppression import wrap_enabled
 from .spec import PatchSpec, source_hash
@@ -101,7 +101,7 @@ def _acquire_claim(target: str, spec: PatchSpec, owner: _ScopedOwner) -> None:
         target,
         spec.owner,
         owner,
-        lambda: is_patched(target),
+        lambda: is_marked(target, spec.property_part),
         property_part=spec.property_part,
     )
     if not ok:
