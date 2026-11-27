@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "client-b-patches"
+version = "1.0.0"
+description = "示例：定制方 B 的 funcpatch 补丁包"
+requires-python = ">=3.10"
+dependencies = ["funcpatch"]
+
+# 与 client_a 改同一个目标；部署时用 FUNC_PATCH_OWNER 指定生效方。
+# 这里指向返回补丁列表的函数，演示 entry point 的另一种写法。
+[project.entry-points."funcpatch.patches"]
+client_b = "patch:patches"
+
+[tool.setuptools]
+py-modules = ["patch"]

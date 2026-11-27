@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "client-a-patches"
+version = "1.0.0"
+description = "示例：定制方 A 的 funcpatch 补丁包"
+requires-python = ">=3.10"
+dependencies = ["funcpatch"]
+
+# 补丁包的对外暴露方式：funcpatch 通过这个 entry point 组自动发现补丁。
+# 可以指向 PatchSpec、补丁列表，或返回补丁列表的函数。
+[project.entry-points."funcpatch.patches"]
+client_a = "patch:patches"
+
+[tool.setuptools]
+py-modules = ["patch"]

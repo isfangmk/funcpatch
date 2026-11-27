@@ -30,3 +30,15 @@ class PatchRejectedError(FunCPatchError):
 
 class ConflictError(FunCPatchError):
     """检测到补丁冲突（同一目标多个 owner）。"""
+
+
+class FunCPatchWarning(UserWarning):
+    """funcpatch 非致命问题警告（借鉴 pluggy.PluggyWarning）。
+
+    与异常不同，警告不中断部署，用于提示可容忍但值得关注的情况，
+    例如目标函数签名与替代实现不一致。
+    """
+
+
+class DeprecatedTargetWarning(FunCPatchWarning):
+    """补丁目标被标记为废弃时发出。"""

@@ -90,6 +90,47 @@ def test_discover_entry_point_load_error(monkeypatch):
     assert discover_from_entry_points("any_group") == []
 
 
+def test_discover_all_filter_applies_to_entry_points(monkeypatch):
+    """discover_all 的 filter_fn 同样过滤 entry point 来源的 spec。"""
+    spec = PatchSpec("ep_owner", "m", "a", lambda: None)
+
+    class FakeEP:
+        name = "fake"
+
+        @staticmethod
+        def load():
+            return spec
+
+    monkeypatch.setattr(metadata, "entry_points", lambda group=None: [FakeEP()])
+    assert any(s.owner == "ep_owner" for s in discover_all("no_such_pkg_xyz", "any_group"))
+    filtered = discover_all(
+        "no_such_pkg_xyz", "any_group", filter_fn=lambda s: s.owner != "ep_owner"
+    )
+    assert all(s.owner != "ep_owner" for s in filtered)
+
+
+def test_discover_from_directory_default_scans_plain_submodule(tmp_path, monkeypatch):
+    """默认（非递归）扫描应发现包下的普通子模块。"""
+    import sys
+
+    pkg_dir = tmp_path / "scan_pkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+    (pkg_dir / "mod.py").write_text(
+        "from funcpatch import PatchSpec\np = PatchSpec('scan_owner', 'm', 'f', lambda: None)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in ("scan_pkg", "scan_pkg.mod"):
+        sys.modules.pop(name, None)
+    try:
+        specs = discover_from_directory("scan_pkg")
+        assert any(s.owner == "scan_owner" for s in specs)
+    finally:
+        for name in ("scan_pkg", "scan_pkg.mod"):
+            sys.modules.pop(name, None)
+
+
 def test_discover_all_dedup(monkeypatch):
     # 目录扫描与 entry point 返回同一个 spec → 只保留一个
     import importlib

@@ -50,22 +50,39 @@ def test_e2e_bootstrap_hook(monkeypatch):
     ]
     cfg = SelectionConfig(default_owner="owner_b", target_owners={}, enabled=True)
 
-    # 确保目标模块尚未导入
     sys.modules.pop(TARGET_MODULE, None)
+    try:
+        reg = bootstrap(cfg, specs)
+        module = importlib.import_module(TARGET_MODULE)
+        result = module.compute()
+        assert result == {"X-Source": "owner_b_e2e"}, f"实际结果: {result}"
+        assert get_registry() is reg
+        assert reg.is_applied(f"{TARGET_MODULE}:compute")
+    finally:
+        reg = get_registry()
+        if reg is not None:
+            reg.revert_all()
+        sys.modules.pop(TARGET_MODULE, None)
+        path.unlink(missing_ok=True)
 
-    # bootstrap 只注册 hook，不 import 目标模块
-    reg = bootstrap(cfg, specs)
-    assert TARGET_MODULE not in sys.modules or True  # wrapt 可能已探测
 
-    # import 目标 → hook 触发 → 选中 owner_b 生效
+def test_bootstrap_applies_when_target_already_imported(monkeypatch):
+    """目标模块在 bootstrap 前已导入时，hook 会同步触发，补丁仍须生效。"""
+    path = _write_target_module()
+    monkeypatch.delenv("FUNC_PATCH_CONFIG", raising=False)
+
     module = importlib.import_module(TARGET_MODULE)
-    result = module.compute()
-    assert result == {"X-Source": "owner_b_e2e"}, f"实际结果: {result}"
+    assert module.compute() == {"X-Source": "original"}
 
-    assert get_registry() is reg
-    assert reg.is_applied(f"{TARGET_MODULE}:compute")
-
-    # 清理：回滚 + 删除临时模块文件
-    reg.revert_all()
-    sys.modules.pop(TARGET_MODULE, None)
-    path.unlink(missing_ok=True)
+    specs = [PatchSpec("owner_a", TARGET_MODULE, "compute", owner_a_impl)]
+    cfg = SelectionConfig(default_owner="owner_a", target_owners={}, enabled=True)
+    try:
+        reg = bootstrap(cfg, specs)
+        assert reg.is_applied(f"{TARGET_MODULE}:compute")
+        assert module.compute() == {"X-Source": "owner_a_e2e"}
+    finally:
+        reg = get_registry()
+        if reg is not None:
+            reg.revert_all()
+        sys.modules.pop(TARGET_MODULE, None)
+        path.unlink(missing_ok=True)

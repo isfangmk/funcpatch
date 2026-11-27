@@ -1,0 +1,13 @@
+# 文档与示例随源码包一起分发
+include README.md
+include ARCHITECTURE.md
+include CHANGELOG.md
+include LICENSE
+recursive-include docs *.md
+recursive-include examples *.py *.toml *.md
+prune examples/**/__pycache__
+global-exclude *.py[cod]
+global-exclude __pycache__/*
+
+# 本地工作区不随包分发
+prune plan

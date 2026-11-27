@@ -64,6 +64,21 @@ def test_load_config_from_toml(monkeypatch, tmp_path):
     assert cfg.target_owners == {"app.mod:f1": "toml_target"}
 
 
+def test_load_config_toml_default_without_owner_falls_back_to_env(monkeypatch, tmp_path):
+    """toml [default] 存在但没有 owner 字段时，回退到环境变量。"""
+    toml_path = tmp_path / "funcpatch.toml"
+    toml_path.write_text(
+        '[funcpatch.default]\n\n[funcpatch.targets]\n"app.mod:f1" = "toml_target"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FUNC_PATCH_OWNER", "env_owner")
+    monkeypatch.setenv("FUNC_PATCH_CONFIG", str(toml_path))
+
+    cfg = load_config()
+    assert cfg.default_owner == "env_owner"  # toml 未指定 owner，用 env
+    assert cfg.target_owners == {"app.mod:f1": "toml_target"}  # [targets] 仍生效
+
+
 def test_load_config_toml_without_prefix(monkeypatch, tmp_path):
     toml_path = tmp_path / "funcpatch.toml"
     toml_path.write_text(

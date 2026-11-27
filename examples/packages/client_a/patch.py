@@ -1,15 +1,20 @@
-"""示例：客户 A 的补丁包（可作为独立 pip 包分发）。
+"""示例：定制方 A 的补丁包（作为独立 pip 包分发）。
 
-演示如何用 entry point 暴露补丁：
+补丁包由定制方维护、与主分支代码分离，通过 entry point 暴露给 funcpatch：
+
     [project.entry-points."funcpatch.patches"]
-    client_a = "client_a_patch:patches"
+    client_a = "patch:patches"
+
+安装后 funcpatch 会自动发现本包；部署时用 FUNC_PATCH_OWNER=client_a 决定是否生效。
 """
+
+from __future__ import annotations
 
 from funcpatch import PatchSpec
 
 
-def build_headers(self, cookie=None):
-    """客户 A 的 build_headers 完整实现（函数体由补丁拥有）。"""
+def build_headers(self, cookie: str | None = None) -> dict[str, str]:
+    """定制方 A 的完整实现：函数体由补丁拥有。"""
     headers = {
         "Content-Type": "application/json",
         "X-Parse-Application-Id": getattr(self, "parse_app_id", "Bonree"),
@@ -26,6 +31,6 @@ patches = [
         target_module="app.core.config",
         target_attr="Settings.build_headers",
         replacement=build_headers,
-        description="客户 A 自定义请求头",
+        description="定制方 A 自定义请求头",
     )
 ]

@@ -10,8 +10,9 @@ import importlib
 import importlib.metadata
 import logging
 import pkgutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from types import ModuleType
+from typing import Any
 
 from .decorators import collect_patched
 from .spec import PatchSpec
@@ -19,6 +20,24 @@ from .spec import PatchSpec
 logger = logging.getLogger("funcpatch.discovery")
 
 ENTRY_POINT_GROUP = "funcpatch.patches"
+
+# entry point 来源追溯：spec id → {distribution, version, ep_name}。
+# 用 id(spec) 作键避免污染 frozen 的 PatchSpec 数据对象。
+_SPEC_ORIGINS: dict[int, dict[str, str]] = {}
+
+
+def get_spec_origin(spec: PatchSpec) -> dict[str, str] | None:
+    """返回该 spec 的 entry point 来源（发行包名/版本/ep 名），非 entry point 返回 None。"""
+    return _SPEC_ORIGINS.get(id(spec))
+
+
+def _record_origin(spec: PatchSpec, ep: Any) -> None:
+    dist = getattr(ep, "dist", None)
+    _SPEC_ORIGINS[id(spec)] = {
+        "distribution": getattr(dist, "name", "") or "",
+        "version": getattr(dist, "version", "") or "",
+        "ep_name": getattr(ep, "name", "") or "",
+    }
 
 
 def _collect_specs(module: ModuleType) -> list[PatchSpec]:
@@ -32,30 +51,49 @@ def _collect_specs(module: ModuleType) -> list[PatchSpec]:
     return specs
 
 
-def discover_from_directory(
-    package: str = "funcpatch.patches",
-    filter_fn: Callable[[PatchSpec], bool] | None = None,
-) -> list[PatchSpec]:
-    """扫描包目录下所有模块，收集 PatchSpec。"""
-    specs: list[PatchSpec] = []
+def _iter_package_modules(package: str, recursive: bool) -> Iterable[str]:
+    """产出包名及其子模块名；recursive=True 时递归进入子包。
+
+    借鉴 gorilla 的 _module_iterator：遍历时只产出名字，实际 import
+    交给调用方做，便于对每个模块单独做失败隔离（语法错误、运行时异常同样跳过）。
+    """
+    yield package
     try:
         pkg = importlib.import_module(package)
     except ImportError as exc:
         logger.debug("目录扫描包 %s 不存在：%s", package, exc)
-        return specs
+        return
 
-    # 先收集包 __init__.py 自身定义的补丁
-    specs.extend(_collect_specs(pkg))
+    paths = getattr(pkg, "__path__", None)
+    if paths is None:
+        return
 
-    for info in pkgutil.iter_modules(pkg.__path__):
+    if recursive:
+        for info in pkgutil.walk_packages(paths, prefix=f"{package}."):
+            yield info.name
+    else:
+        for info in pkgutil.iter_modules(paths):
+            if not info.ispkg:
+                yield f"{package}.{info.name}"
+
+
+def discover_from_directory(
+    package: str = "funcpatch.patches",
+    filter_fn: Callable[[PatchSpec], bool] | None = None,
+    *,
+    recursive: bool = False,
+) -> list[PatchSpec]:
+    """扫描包目录下所有模块，收集 PatchSpec。"""
+    specs: list[PatchSpec] = []
+    for name in _iter_package_modules(package, recursive):
         try:
-            module = importlib.import_module(f"{package}.{info.name}")
+            module = importlib.import_module(name)
         except Exception as exc:
-            logger.warning("加载补丁模块 %s 失败：%s", info.name, exc)
+            logger.debug("跳过包 %s：%s", name, exc)
             continue
         found = _collect_specs(module)
         if found:
-            logger.debug("目录扫描发现 %d 条补丁：%s", len(found), info.name)
+            logger.debug("目录扫描发现 %d 条补丁：%s", len(found), name)
         specs.extend(found)
 
     if filter_fn is not None:
@@ -77,16 +115,23 @@ def discover_from_entry_points(group: str = ENTRY_POINT_GROUP) -> list[PatchSpec
         except Exception as exc:
             logger.warning("加载 entry point %s 失败：%s", ep.name, exc)
             continue
-        # entry point 可指向单个 PatchSpec、可迭代的 PatchSpec，或返回它们的函数
+        # entry point 可指向单个 PatchSpec、任意可迭代的 PatchSpec，或返回它们的函数
         if callable(obj) and not isinstance(obj, PatchSpec):
             try:
                 obj = obj()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("entry point %s 调用失败：%s", ep.name, exc)
+                continue
         if isinstance(obj, PatchSpec):
+            _record_origin(obj, ep)
             specs.append(obj)
-        elif isinstance(obj, (list, tuple)):
-            specs.extend(s for s in obj if isinstance(s, PatchSpec))
+        elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, dict)):
+            for spec in obj:
+                if isinstance(spec, PatchSpec):
+                    _record_origin(spec, ep)
+                    specs.append(spec)
+                else:
+                    logger.warning("entry point %s 返回了非 PatchSpec 项：%r", ep.name, spec)
         else:
             logger.warning("entry point %s 未返回 PatchSpec", ep.name)
     return specs
@@ -96,9 +141,18 @@ def discover_all(
     package: str = "funcpatch.patches",
     group: str = ENTRY_POINT_GROUP,
     filter_fn: Callable[[PatchSpec], bool] | None = None,
+    *,
+    recursive: bool = False,
 ) -> list[PatchSpec]:
-    """同时执行两种发现，合并去重（按 owner+target+replacement 身份）。"""
-    specs = discover_from_directory(package, filter_fn) + discover_from_entry_points(group)
+    """同时执行两种发现，合并去重（按 owner+target+replacement 身份）。
+
+    filter_fn 对两种来源的 spec 都生效。
+    """
+    specs = discover_from_directory(package, filter_fn, recursive=recursive)
+    eps = discover_from_entry_points(group)
+    if filter_fn is not None:
+        eps = [s for s in eps if filter_fn(s)]
+    specs += eps
     seen: set[tuple[str, str, int]] = set()
     unique: list[PatchSpec] = []
     for spec in specs:

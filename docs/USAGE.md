@@ -3,8 +3,17 @@
 ## 安装
 
 ```bash
-pip install funcpatch
+pip install "funcpatch @ git+https://github.com/isfangmk/funcpatch.git"
 ```
+
+尚未发布到 PyPI；开发时可加 `--editable` 并装上可选依赖：
+
+```bash
+pip install -e ".[dev,toml,web]"
+```
+
+- `toml`：Python 3.10 需要 `tomli`（3.11+ 用内置 `tomllib`，无需此 extra）
+- `web`：FastAPI 集成示例与测试需要 `fastapi` / `httpx` / `uvicorn`
 
 ## 三种使用方式
 
@@ -44,7 +53,7 @@ bootstrap()  # 自动发现 + 注册延迟 hook
 ```toml
 # client-a-plugin/pyproject.toml
 [project.entry-points."funcpatch.patches"]
-client_a = "client_a_patch:patches"
+client_a = "patch:patches"
 ```
 
 `patches` 可以是：单个 `PatchSpec`、`PatchSpec` 列表、或返回它们的函数。
@@ -83,6 +92,16 @@ owner = "client_a"
 ```
 
 选择优先级：`[targets]` 精确匹配 > `[default]` > `FUNC_PATCH_OWNER` > 不应用。
+`[targets]` 的键支持点号（`app.mod.f`）与冒号（`app.mod:f`）两种写法，
+内部统一比较，因此文档示例中的点号写法可直接生效。
+
+### 全局开关
+
+```bash
+export FUNC_PATCH_ENABLED=false  # 不应用任何补丁；缺省为开启
+```
+
+关闭时注册表拒绝所有 apply（审计记录 reason=`disabled`），loader 不注册加载钩子。
 
 ## 版本校验
 
@@ -95,10 +114,27 @@ from app.core.config import Settings
 print(source_hash(Settings.build_headers))  # 填入 expect_hash
 ```
 
-## 两种替换模式
+`expect_deps_hash` 进一步覆盖目标调用的**同模块依赖**（通过全局名引用、定义在同一模块的
+函数/类）。主分支改了被调用的 helper 时，仅靠 `expect_hash` 发现不了，补丁会静默跑在旧假设上：
+
+```python
+from funcpatch import dependency_hash
+
+expect_deps_hash = dependency_hash(Settings.build_headers)
+```
+
+批量查看当前值：
+
+```bash
+funcpatch hash --package mypatches
+```
+
+## 三种替换模式
 
 - `mode="replace"`（默认）：完全替换函数实现，函数体由补丁拥有。适合大量修改。
 - `mode="wrap"`：包一层，可调用原函数（wrapt.FunctionWrapper 语义）。
+- `mode="add"`：给目标类添加主分支里**原本不存在**的方法或属性。目标属性必须原本不存在
+  （存在则拒绝，避免覆盖主分支实现），回滚时删除该属性。
 
 ```python
 def wrapper(original, instance, args, kwargs):
@@ -108,9 +144,17 @@ def wrapper(original, instance, args, kwargs):
 
 
 PatchSpec(..., replacement=wrapper, mode="wrap")
+
+PatchSpec(
+    ...,
+    target_attr="Settings.client_only_helper",
+    replacement=lambda self, x: f"client-{x}",
+    mode="add",
+)
 ```
 
-两种模式都保留原函数签名（`inspect.signature` 返回原签名）。
+由于包装器会反映替代实现的签名，`inspect.signature` 返回的是替代函数的签名。
+若需要保留原函数签名，可用 `with_signature(prototype=原函数)` 装饰替代实现。
 
 ## enabled 动态开关
 
@@ -122,7 +166,7 @@ PatchSpec(..., enabled=lambda: feature_flag_is_on())
 
 ## 作用域与临时补丁
 
-不经过 Registry，仅在特定范围生效并自动回滚：
+不写入 Registry 的持久状态，仅在特定范围生效并自动回滚：
 
 ```python
 from funcpatch import scoped_patch, transient_patch
@@ -134,6 +178,9 @@ with scoped_patch("app.core.config", "Settings.build_headers", spec):
 @transient_patch("app.core.config", "Settings.build_headers", spec)
 def do_something(): ...  # 仅该函数执行期间生效
 ```
+
+它们同样校验 `expect_hash` 并检查进程占用，只是占用只在作用域/调用期间持有，
+退出即释放；可用于测试隔离而不必 `bootstrap()`。
 
 ## 装饰式声明
 
@@ -152,11 +199,17 @@ def my_impl(self, cookie=None): ...
 ## 诊断
 
 ```python
-from funcpatch import is_patched, get_applied_info
+from funcpatch import is_patched, get_applied_info, get_wrapper
 
 is_patched("app.core.config:Settings.build_headers")  # 是否被打补丁
-get_applied_info("app.core.config:Settings.build_headers")  # {'owner': ..., 'target': ...}
+get_applied_info("app.core.config:Settings.build_headers")
+# {'owner': 'client_a', 'target': 'app.core.config:Settings.build_headers', 'targets': [...]}
 ```
+
+`targets` 列出共用同一 replacement 的全部目标；`target` 是本次查询的目标。
+
+`get_wrapper()` 返回当前生效的包装器/替代函数。另有 `unwrap_target()` 可拆掉包装链，
+但它**有副作用**（补丁标记随之消失），仅在确实要拆包装时使用。
 
 ## 特殊函数类型
 
@@ -187,10 +240,21 @@ def impl(cls):
 PatchSpec(..., target_attr="Settings.build_headers", replacement=impl)
 ```
 
+property 可以只替换其中一部分，其余保持原样：
+
+```python
+PatchSpec(..., target_attr="Mutable.value", replacement=new_setter, property_part="set")
+PatchSpec(..., target_attr="Mutable.value", replacement=new_deleter, property_part="delete")
+```
+
 ## 并发安全
 
 `Registry.apply()` / `revert()` 内部用 `RLock` 保护，可被多个线程安全调用，
 重复 apply 同一目标只会应用一次（幂等）。
+
+"单一生效"由进程级占用表保证：即使创建多个 `Registry` 实例，同一目标也只能被
+一个实例占用，后 apply 的会被拒绝并记冲突；回滚后占用释放，可重新接管。
+用 `claims_snapshot()` 可查看当前每个目标被哪个 owner 占用。
 
 ## 回滚与查询
 
@@ -207,12 +271,61 @@ reg.revert_all()
 ## 审计
 
 补丁生效、冲突、版本拒绝都会通过 `funcpatch.audit` 打日志。可在应用启动时配置日志级别查看。
+`AuditReport` 支持 `to_dict()` 导出结构化数据、`clear()` 清空，日志只打印自上次调用以来的增量，
+避免目标模块逐个导入时重复刷屏。
+
+## 部署前校验与严格模式
+
+`validate()` 只读检查目标可解析、hash 匹配、owner 命中，不修改任何状态，适合放在 CI：
+
+```python
+from funcpatch import validate, discover_all
+
+results = validate(discover_all())
+failed = [r.to_dict() for r in results if not r.ok]
+assert not failed, failed
+```
+
+`Registry.plan()` 返回每个目标"将会做什么"的列表（selected / skipped / would_apply / reason）。
+`plan(include_diff=True)` 还会为 `replace` 模式的补丁生成 unified diff，展示目标实现与
+替代实现的源码差异，便于发布前确认"这个函数会被改成什么样"。
+
+```bash
+funcpatch plan --diff
+```
+
+默认是 fail-safe（失败返回 `False` 并记录）；需要部署期 fail-fast 时用 `strict=True`，
+拒绝点会抛 `PatchRejectedError` / `PathResolutionError` / `TargetNotFoundError`。
+
+## 批量事务
+
+```python
+from funcpatch import get_registry
+
+reg = get_registry()
+result = reg.apply_all(["mod:fn1", "mod:fn2"])
+if not result.ok:
+    print(result.failed, result.rolled_back)  # 本次已成功项全部回滚
+
+with reg.transaction():
+    reg.apply("mod:fn1")
+    # 块内抛异常时自动回滚
+```
+
+## 生命周期
+
+```python
+from funcpatch import bootstrap, shutdown
+
+bootstrap()  # 幂等，重复调用返回已有 Registry
+shutdown()  # 回滚全部 + 清空全局状态
+```
 
 ## 与 .pth 自启动结合
 
 如果项目用 `.pth` 在解释器启动时引导：
 
-```python
+```text
 # 某个 .pth 文件
 /path/to/funcpatch/src
 import funcpatch; funcpatch.bootstrap()
