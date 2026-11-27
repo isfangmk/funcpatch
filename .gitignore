@@ -21,6 +21,7 @@ env/
 .coverage
 htmlcov/
 .pytest_basetemp/
+.pytest-tmp/
 
 # 本地工作区：迭代记录、评估笔记等，不随仓库发布
 plan/

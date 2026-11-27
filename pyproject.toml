@@ -49,7 +49,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # 固定临时目录到仓库内：部分环境下的系统临时目录可能不可写，
 # 导致 tmp_path fixture 抛 PermissionError 而非真实测试失败。
-addopts = "--basetemp=.pytest_basetemp/run"
+# 只用单层目录名——pytest 不会为 basetemp 创建父目录，
+# 写成 ".pytest_basetemp/run" 在干净检出（父目录不存在）时会失败。
+addopts = "--basetemp=.pytest-tmp"
 
 [tool.ruff]
 line-length = 100
