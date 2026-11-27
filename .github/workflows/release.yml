@@ -78,9 +78,9 @@ jobs:
             echo
             echo "---"
             echo
-            echo "完整变更记录：<https://github.com/\${{ github.repository }}/blob/\${{ github.ref_name }}/CHANGELOG.md>"
+            echo "完整变更记录：<https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md>"
             echo
-            echo "文档：<https://github.com/\${{ github.repository }}/blob/\${{ github.ref_name }}/docs/USAGE.md>"
+            echo "文档：<https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/USAGE.md>"
           } > release-notes.md
           cat release-notes.md
 
