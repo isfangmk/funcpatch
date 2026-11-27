@@ -32,6 +32,17 @@ funcpatch 完整透传 wrapt 的成熟工具，**不重造**。以下均从顶�
 - `default_filter(name, obj)`：排除模块与下划线开头的名字。
 - `create_patches(owner, module, root, *, target_prefix="", replacement=None, filter_fn=..., ...)`：
   为类/模块成员批量生成 `PatchSpec`。
+  `target_prefix` 是**根对象在模块中的属性路径**，不是给成员加前缀——
+  `root` 是类时用它指明该类在模块中的位置，生成的成员目标才可解析：
+
+  ```python
+  # 正确：root 是类，prefix 指明它在模块中的路径
+  create_patches("client_a", "app.core.config", Settings, target_prefix="Settings")
+  # -> 目标 app.core.config:Settings.build_headers
+  ```
+
+  把 `root` 传成模块再配 `target_prefix` 会得到指向模块成员前缀的无效目标，
+  部署前用 `validate()` 可查出这类错误。
 - `find_patches(module, *, recursive=True)`：递归扫描装饰式声明（含 classmethod 底层函数）。
 - `get_original_attribute(obj, name)`：`get_attribute` 的别名。
 
