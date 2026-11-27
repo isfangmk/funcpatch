@@ -19,10 +19,11 @@ pip install -e ".[dev,toml,web]"
 
 ### 方式 1：目录扫描（开发期最简单）
 
-在 `funcpatch/patches/` 目录（或任意包）下放补丁模块，模块里定义 `PatchSpec` 实例：
+把你的补丁模块放进**自建的包**里（例如项目里的 `mypatches/`），模块里定义
+`PatchSpec` 实例：
 
 ```python
-# mypatches.py
+# mypatches/patches.py
 from funcpatch import PatchSpec
 
 
@@ -38,13 +39,20 @@ patch = PatchSpec(
 )
 ```
 
-引导（进程启动早期调用）：
+引导时指定这个包名：
 
 ```python
 from funcpatch import bootstrap
+from funcpatch.discovery import discover_from_directory
 
-bootstrap()  # 自动发现 + 注册延迟 hook
+specs = discover_from_directory("mypatches")  # 扫描 mypatches 包
+bootstrap(specs=specs)
 ```
+
+**注意**：默认扫描的包名是 `funcpatch.patches`，指的是**已安装的 funcpatch 包下的
+`patches` 子包**，不是项目里自己建的 `funcpatch/` 目录——同名目录会遮蔽
+已安装的 funcpatch，导致 `from funcpatch import ...` 直接 ImportError。
+项目内请用别的包名，并通过 `discover_from_directory("<你的包名>")` 指定。
 
 ### 方式 2：entry point（生产分发）
 
@@ -111,8 +119,10 @@ export FUNC_PATCH_ENABLED=false  # 不应用任何补丁；缺省为开启
 from funcpatch import get_base, source_hash
 from app.core.config import Settings
 
-# get_base 描述符安全：普通方法、classmethod、staticmethod 都能取到底层函数。
-# 直接写 Settings.build_headers 时，若它是 classmethod 会取到绑定方法，取不到源码。
+# get_base 取描述符底层的函数对象。
+# 对 property 是必需的：直接对 property 对象取源码会抛 TypeError，
+# 退回 repr() 后的 hash 每次进程都不同，跨进程比对必然失配。
+# 对 classmethod / staticmethod 则与直接取等价（都能取到底层函数的源码）。
 print(source_hash(get_base(Settings.build_headers)))  # 填入 expect_hash
 ```
 
@@ -159,8 +169,13 @@ PatchSpec(
 )
 ```
 
-由于包装器会反映替代实现的签名，`inspect.signature` 返回的是替代函数的签名。
-若需要保留原函数签名，可用 `with_signature(prototype=原函数)` 装饰替代实现。
+`inspect.signature` 的返回随模式而不同：
+
+- `replace` 模式替换了整个函数体，因此返回**替代实现**的签名。
+- `wrap` 模式由 wrapt 的 `FunctionWrapper` 包裹原函数，保留**原函数**的签名。
+
+若在 `replace` 模式下需要保留原函数签名，可用 `with_signature(prototype=原函数)`
+装饰替代实现。
 
 ## enabled 动态开关
 
@@ -219,8 +234,9 @@ get_applied_info("app.core.config:Settings.build_headers")
 
 `targets` 列出共用同一 replacement 的全部目标；`target` 是本次查询的目标。
 
-`get_wrapper()` 返回当前生效的包装器/替代函数。另有 `unwrap_target()` 可拆掉包装链，
-但它**有副作用**（补丁标记随之消失），仅在确实要拆包装时使用。
+`get_wrapper()` 返回当前生效的包装器/替代函数。另有 `unwrap_target()` 可拆掉 funcpatch
+的包装层与补丁标记，但它**有副作用**（补丁标记随之消失），且**不恢复原实现**
+（`replace` 模式下恢复原实现要用 `Registry.revert()`），仅在确实要拆包装时使用。
 
 ## 特殊函数类型
 

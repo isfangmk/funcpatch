@@ -1,6 +1,8 @@
 """补丁发现：目录扫描 + entry point 双支持。
 
-开发期：把补丁写在 funcpatch/patches/ 目录，自动扫描发现。
+开发期：把补丁写进自建的包，用 discover_from_directory 指定包名后自动扫描发现。
+默认扫描的 "funcpatch.patches" 指已安装的 funcpatch 包下的 patches 子包——
+项目里不要自建同名目录，那会遮蔽已安装的 funcpatch。
 生产期：每个 owner 做成独立 pip 包，声明 entry point 组 "funcpatch.patches"。
 """
 
