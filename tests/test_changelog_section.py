@@ -80,7 +80,9 @@ def test_extract_real_changelog_has_current_version():
     text = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
     section = extract(__version__, text)
     assert f"## [{__version__}]" in section
-    assert "### 新增" in section
+    # 摘要含版本标题与至少一个小节（不硬编码小节名——改名也不该让测试失效）
+    assert "### " in section
+    assert section.startswith(f"## [{__version__}]")
 
 
 def test_extract_excludes_link_definitions():
