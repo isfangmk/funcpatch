@@ -11,7 +11,7 @@
 
 - `wrapt.importer.register_post_import_hook`：成熟的 post-import-hook，支持字符串延迟加载（`"module:function"`），模块未导入时登记、已导入时立即触发。
 - `wrapt.importer.ImportHookFinder.find_spec`：用 `in_progress` 旗帜防止回调 `find_spec()` 时无限递归——自研极易遗漏。
-- `wrapt.importer.ImportHookFinder._self_set_loader`：hook 触发后把 `__loader__` 还原为真实 loader，不污染 import 系统。
+- `wrapt.importer._ImportHookChainedLoader._self_set_loader`：hook 触发后把 `__loader__` 还原为真实 loader，不污染 import 系统。
 - `wrapt.patches.patch_function_wrapper("module?", name)`：`?` 后缀即"延迟到模块首次导入时应用"，正好解决"引导阶段目标模块不在 sys.path"的问题。
 
 （依据 wrapt 2.5.2 源码；此处只引函数名不引行号，以免依赖升级后失效。）
@@ -50,7 +50,7 @@
 - `wrapt.importer.discover_post_import_hooks(group)`：entry point 发现。
 - `gorilla.find_patches(modules)`：包扫描发现。
 
-**结论**：开发期用目录扫描（`funcpatch/patches/`），生产用 entry point 组 `funcpatch.patches`。两者结果合并、按 `(owner, target, replacement)` 去重。
+**结论**：开发期用目录扫描（自建包，通过 `discover_from_directory("<包名>")` 指定；默认扫描的 `funcpatch.patches` 指已安装包的 `patches` 子包），生产用 entry point 组 `funcpatch.patches`。两者结果合并、按 `(owner, target, replacement)` 去重。
 
 ## 决策 6：不用字节码改写
 

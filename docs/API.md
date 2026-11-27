@@ -30,7 +30,7 @@ funcpatch 完整透传 wrapt 的成熟工具，**不重造**。以下均从顶�
 - `get_base(obj)`：递归解包 bound method / classmethod / staticmethod / property 到底层函数。
 - `get_members(obj, *, traverse_bases=True, filter_fn=None)`：MRO 遍历去重、按名字排序。
 - `default_filter(name, obj)`：排除模块与下划线开头的名字。
-- `create_patches(owner, module, root, *, target_prefix="", replacement=None, filter_fn=..., ...)`：
+- `create_patches(owner, target_module, root, *, target_prefix="", replacement=None, filter_fn=..., ...)`：
   为类/模块成员批量生成 `PatchSpec`。
   `target_prefix` 是**根对象在模块中的属性路径**，不是给成员加前缀——
   `root` 是类时用它指明该类在模块中的位置，生成的成员目标才可解析：
@@ -145,6 +145,10 @@ funcpatch hash --package mypatches
   此时返回 `False`。
   目标模块被 reload 后补丁不会自动恢复（wrapt 的后导入钩子只在模块**首次**
   导入时触发），再次调用 `apply(target)` 会重新安装补丁。
+- `claim_is_effective(target) -> bool`：本注册表对该目标的占用是否仍然有效。
+  进程级占用表据此判断一条占用记录是不是陈旧的：只有"确实记录过应用、
+  且补丁痕迹已消失"才算陈旧；尚未安装完成的不算。
+  `is_applied` 是它的薄封装。
 - `plan(*, include_diff=False) -> list[dict]`：预演每个目标（含占用冲突检查）。注意：hash 校验可能需要
   import 目标模块，该 import 可能触发已注册的后导入钩子。
   `include_diff=True` 时，额外为 `replace` 模式的补丁生成 unified diff（键 `diff`），
@@ -179,14 +183,14 @@ funcpatch hash --package mypatches
 
 ## 声明
 
-- `patch(owner, module, attr, *, ...)`：装饰函数为一条 spec，支持 `property_part`。
+- `patch(owner, target_module, target_attr, *, ...)`：装饰函数为一条 spec，支持 `property_part`。
 - `patches(declarations, *, ...)`：一个函数声明多条 spec。
 - `collect_patched(module_or_class)`：收集装饰式声明（用 `vars()`，不触发 property 副作用）。
 
 ## 作用域补丁
 
-- `scoped_patch(module, attr, spec)`：with 块内生效；校验 hash、检查占用。
-- `transient_patch(module, attr, spec)`：被装饰函数调用期间生效；同样校验。
+- `scoped_patch(target_module, target_attr, spec)`：with 块内生效；校验 hash、检查占用。
+- `transient_patch(target_module, target_attr, spec)`：被装饰函数调用期间生效；同样校验。
   装饰时即完成校验，配置错误在装饰处直接暴露。
 
 ## 诊断
@@ -196,9 +200,10 @@ funcpatch hash --package mypatches
 - `get_applied_info(target) -> dict | None`：补丁标记信息，含 `owner` / `target` / `targets`
   （共用同一 replacement 的全部目标）；未打补丁返回 `None`。
 - `get_wrapper(target)`：当前生效的包装器/替代函数。
-- `unwrap_target(target)`：拆掉包装链，恢复被包装的原函数。
-  **有副作用**：调用后补丁标记随之消失，`is_patched()` 转为 `False`；
-  仅用于诊断时优先用 `get_wrapper()`。
+- `unwrap_target(target)`：拆掉 funcpatch 的包装层与补丁标记。
+  **有副作用**：调用后 `is_patched()` 转为 `False`；仅用于诊断时优先用 `get_wrapper()`。
+  注意它**不恢复原实现**——`replace` 模式下目标位置上的替代实现仍在，
+  恢复原实现是 `Registry.revert()` 的职责（`wrap` 模式下则能取回原函数）。
 - `claims_snapshot() -> dict`：当前每个目标被哪个 owner 占用。
 - `clear_claim(target, *, property_part="get") -> bool`：显式释放占用（陈旧占用恢复）。
 - `claim_key(target, property_part="get") -> str`：占用键（property 各部分独立）。
@@ -207,8 +212,9 @@ funcpatch hash --package mypatches
 
 - `validate(specs, owner=None, *, check_signature=False, config=None) -> list[ValidationResult]`
 - `validate_spec(spec, owner=None, *, check_signature=False) -> ValidationResult`
-  - `check_signature=True` 时检查替代实现参数个数，不匹配记录 warning 并发
-    `FunCPatchWarning`，不影响 `ok`（借鉴 pluggy `_verify_hook`）。
+  - `check_signature=True` 时检查替代实现与目标的参数兼容性：用 `signature.bind`
+    做真实实参绑定，覆盖参数名、数量、默认值、keyword-only 与 positional-only。
+    不匹配记录 warning 并发 `FunCPatchWarning`，不影响 `ok`（借鉴 pluggy `_verify_hook`）。
   - `config` 给出时，按目标解析实际生效的 owner（`[targets]` 精确指定优先于 `[default]`）
     并检查它是否命中某条 spec：部署配置了 owner 却没有任何补丁命中时会报出
     `owner mismatch`，与 `plan()` 的结论一致。未配置 owner 时不作为问题。

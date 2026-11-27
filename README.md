@@ -38,7 +38,7 @@ funcpatch 面向这样的场景：同一套核心代码要交付给多个客户�
   → .pth / 显式 bootstrap
       → 读取配置（funcpatch.toml + FUNC_PATCH_OWNER）
       → 发现补丁（目录扫描 + entry point 双支持）
-      → 为每个目标注册 wrapt post-import-hook（字符串延迟，不提前 import 目标模块）
+      → 为每个目标模块注册一个 wrapt post-import-hook（不提前 import 目标模块）
   → 目标模块首次被 import
       → hook 触发
       → 按三层规则选择唯一 owner
@@ -123,8 +123,9 @@ def my_build_headers(self, cookie=None):
     ...
 
 
-# get_base 描述符安全：普通方法、classmethod、staticmethod 都能取到底层函数。
-# 直接写 Settings.build_headers 对 classmethod 会取到绑定方法，取不到源码。
+# get_base 取描述符底层的函数对象。对 property 是必需的（直接取源码会抛
+# TypeError，退回 repr() 后 hash 跨进程不稳定）；对 classmethod / staticmethod
+# 则与直接取等价。
 _target = get_base(Settings.build_headers)
 
 patch = PatchSpec(

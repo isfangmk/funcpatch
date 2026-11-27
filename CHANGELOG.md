@@ -77,6 +77,27 @@
 - 修正若干恒真断言与只验证"不抛异常"的弱断言。
 - 消除线程测试中的 `sleep` 同步，改为事件驱动，避免慢环境下的偶发失败。
 
+### 文档
+
+- 修正 `inspect.signature` 的说明：`replace` 模式返回替代实现的签名，
+  `wrap` 模式由 wrapt 保留原函数签名——原文把两者混为一谈。
+- 修正 `unwrap_target()` 的说明：它拆掉 funcpatch 的包装层与补丁标记，
+  但不恢复原实现（`replace` 模式下恢复原实现是 `Registry.revert()` 的职责）。
+- 修正 `get_base()` 的用途说明：对 property 是必需的（直接取源码抛 TypeError，
+  退回 repr() 后 hash 跨进程不稳定），对 classmethod / staticmethod 与直接取等价。
+- 修正文档中的参数名：`create_patches` / `patch` / `scoped_patch` /
+  `transient_patch` 的第二、三个参数是 `target_module` / `target_attr`。
+- 修正 `check_signature` 的说明：用 `signature.bind` 做真实实参绑定，
+  覆盖参数名与数量，不只是参数个数。
+- 修正目录扫描的说明：默认扫描的 `funcpatch.patches` 指已安装包的 `patches`
+  子包；项目内自建 `funcpatch/` 目录会遮蔽已安装的 funcpatch，导致
+  `from funcpatch import ...` 直接 ImportError。文档改为引导使用自建包名。
+- 补充 `Registry.claim_is_effective()` 的 API 说明。
+- 修正 ARCHITECTURE.md 中 wrapt 符号路径（`_self_set_loader` 在
+  `_ImportHookChainedLoader` 上，不在 `ImportHookFinder` 上）。
+- 修正 README 中 hook 注册的粒度描述（按目标模块注册，不是按目标）。
+- 修正 CHANGELOG 中 FastAPI 示例的目录名，并补齐缺失的版本链接定义。
+
 ### 工具链
 
 - CI 拆分为 lint / test / package 三个作业，lint 作业独立于 Python 版本矩阵；
@@ -185,7 +206,7 @@
 - async generator 的 `enabled` 路径保持 `isasyncgenfunction` 身份（FastAPI 等 introspection 框架依赖）。
 - 新增 property setter/deleter 的 wrap 模式支持与回滚测试。
 - Python 3.11 / 3.12 / 3.13 全部运行完整测试套件。
-- 新增 FastAPI 端到端集成示例（`examples/fastapi_integration/`）与测试：
+- 新增 FastAPI 端到端集成示例（`examples/fastapi/`）与测试：
   服务代码零改动，HTTP 请求验证补丁生效/回滚/跨 owner 冲突。
 - 新增 CLI 诊断工具：`funcpatch plan` / `claims` / `validate`，
   并注册 `funcpatch` console script。
@@ -245,4 +266,7 @@
 - CI：Python 3.10-3.13 矩阵，ruff + basedpyright + pytest。
 - 28 个测试，含 post-import-hook 端到端与边界场景。
 
+[Unreleased]: https://github.com/isfangmk/funcpatch/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.3.0
+[0.2.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/isfangmk/funcpatch/releases/tag/v0.1.0
