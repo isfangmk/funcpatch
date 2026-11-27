@@ -31,6 +31,10 @@
 - `mode="add"` 不再绕过部署护栏：此前 add 模式在解析目标后直接安装属性，
   跳过了其它模式都会执行的版本约束（`requires`）、`enabled` 开关与废弃告警。
   现抽取 `_check_version_guards` 由三种模式共用，add 模式另补 `enabled` 检查。
+- 作用域补丁（`scoped_patch` / `transient_patch`）不再绕过部署护栏：此前只校验
+  `expect_hash`，部署版本约束（`requires`）、依赖闭包校验（`expect_deps_hash`）
+  与废弃告警（`deprecated`）均未生效，导致 CI 校验通过、运行时行为却不一致。
+  `transient_patch` 改为在装饰时即完成校验，配置错误在装饰处直接暴露。
 - `mode="add"` 的校验与预演在目标模块不可导入时不再抛出 `ModuleNotFoundError`
   中断整批检查，改为报告 `target module import failed: <原因>`。
 - 已打补丁目标的版本校验不再被替代实现污染：补丁生效后目标位置上的对象已是
@@ -66,7 +70,7 @@
 
 ### 测试
 
-- 共 335 个测试；覆盖率 94%。
+- 共 340 个测试；覆盖率 94%。
 - 补充桥接层 50 个透传名称的身份绑定测试，替代原先仅做存在性检查的弱断言。
 - 补充依赖闭包 hash、add 模式、diff 预览、示例可运行性等新能力的测试。
 - 补充 add 模式护栏、hash 污染、owner 命中检查、模块 reload 后状态等场景的回归测试。
