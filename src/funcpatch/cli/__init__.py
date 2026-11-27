@@ -72,6 +72,7 @@ def _cmd_hash(args: argparse.Namespace) -> int:
     import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
 
     from funcpatch._descriptors import unwrap_descriptor
+    from funcpatch._targeting import resolve_original
 
     specs = discover_all(args.package)
     rows = []
@@ -83,6 +84,9 @@ def _cmd_hash(args: argparse.Namespace) -> int:
             raw = unwrap_descriptor(original, spec.property_part)
             if raw is None or not callable(raw):
                 raise ValueError("target has no callable")
+            # 目标已被某个 Registry 接管时，当前位置上的对象是替代实现；
+            # 直接取源码会采到替代实现的 hash，填进 expect_hash 后补丁永远无法应用。
+            raw = resolve_original(spec.target, spec.property_part, raw)
             rows.append(
                 {
                     "target": spec.target,
