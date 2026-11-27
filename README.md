@@ -223,20 +223,25 @@ funcpatch hash                # 批量计算目标源码/依赖 hash，供刷新
 
 ```
 === app.core.config:Settings.build_headers ===
-owner=client_a  会应用
+owner=client_a  mode=replace  会应用
 --- a/app.core.config:Settings.build_headers
 +++ b/app.core.config:Settings.build_headers
-@@ -1,3 +1,7 @@
- def build_headers(self, cookie=None):
--    return {"X-Source": "core"}
+@@ -1,5 +1,5 @@
+-    def build_headers(self, cookie: str | None = None) -> dict[str, str]:
+-        headers = {"X-Source": "original-method"}
+-        if cookie:
+-            headers["cookie"] = cookie
+-        return headers
++def replacement(self, cookie=None):
 +    return {
 +        "X-Source": "client_a",
 +        "X-Tenant": "alpha",
 +    }
 ```
 
-diff 只对 `replace` 模式生成（`wrap` 是运行时拦截而非替换函数体）；实现写成 lambda
-或源码不可取时不生成。
+左侧是目标当前实现，右侧是补丁的替代实现。diff 只对 `replace` 模式生成
+（`wrap` 是运行时拦截而非替换函数体）；实现写成 lambda 或源码不可取时不生成。
+
 
 ---
 

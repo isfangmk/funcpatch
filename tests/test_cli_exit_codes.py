@@ -142,3 +142,43 @@ def test_cli_hash_reports_resolution_error(monkeypatch, capsys):
     assert cli_mod.main(["hash"]) == 1
     out = capsys.readouterr().out
     assert '"error"' in out
+
+
+def test_readme_plan_diff_example_matches_actual_output(monkeypatch, capsys):
+    """README 里的 plan --diff 示例必须与实际输出一致。
+
+    示例一旦与实现脱节，读者照着对不上就会怀疑文档不可信。
+    """
+    import re
+    from pathlib import Path
+
+    readme = Path(__file__).resolve().parent.parent / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    match = re.search(r"`plan --diff` 输出示例：\s*```\n(.*?)```", text, re.S)
+    assert match, "README 中应包含 plan --diff 输出示例"
+    example = match.group(1)
+
+    def replacement(self, cookie=None):
+        return {
+            "X-Source": "client_a",
+            "X-Tenant": "alpha",
+        }
+
+    spec = PatchSpec("client_a", "_target", "Settings.build_headers", replacement)
+    monkeypatch.setattr(cli_mod, "discover_all", lambda *a, **k: [spec])
+    monkeypatch.setattr(
+        cli_mod, "load_config", lambda path=None: SelectionConfig("client_a", {}, True)
+    )
+    assert cli_mod.main(["plan", "--diff"]) == 0
+    actual = capsys.readouterr().out
+
+    # 示例里的目标名是虚构的（app.core.config 不在测试环境里），
+    # 因此核对的是输出结构：模式字段、diff 头、增删行标记。
+    assert "mode=replace" in example, "示例应包含 mode 字段"
+    assert "mode=replace" in actual, "实际输出应包含 mode 字段"
+    assert re.search(r"^--- a/\S+$", example, re.M), "示例应包含 diff 的 --- 行"
+    assert re.search(r"^\+\+\+ b/\S+$", example, re.M), "示例应包含 diff 的 +++ 行"
+    assert re.search(r"^@@ .* @@$", example, re.M), "示例应包含 diff 的 hunk 头"
+    assert re.search(r"^-[^-]", example, re.M), "示例应包含被替换掉的行"
+    assert re.search(r"^\+[^+]", example, re.M), "示例应包含替换后的行"
+    assert "owner=" in example, "示例应包含 owner 字段"
