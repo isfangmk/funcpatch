@@ -7,7 +7,9 @@ Registry 实例（例如两次 bootstrap 用不同配置），它们都能 patch
 这里用弱引用记录"哪个 Registry 占用了哪个目标"：
   * 两个都存活的实例 → 第二个被拒绝并记冲突；
   * 实例已释放但补丁仍在 → 也拒绝（提示先恢复，不留后门）；
-  * 实例已释放且补丁已不在 → 视为陈旧记录，允许新实例接管。
+  * 实例已释放且补丁已不在 → 视为陈旧记录，允许新实例接管；
+  * 实例仍存活但它的补丁已失效（如目标模块被 reload）→ 同样视为陈旧记录，
+    允许新实例接管。
 """
 
 from __future__ import annotations
@@ -43,11 +45,15 @@ def _claim_is_effective(existing: _Claim) -> bool:
     占用方 Registry 可能还活着，但它打的补丁可能已经失效——例如目标模块
     被 reload，旧补丁随旧模块对象一并消失。此时占用记录是陈旧的，
     不应继续阻止新实例接管。
+
+    判定交给占用方自己回答（Registry.claim_is_effective）：只有"确实记录过
+    应用、但补丁痕迹已消失"才算陈旧；尚未安装完成的不算，避免把正在
+    安装中的占用误判为可接管。
     """
     live = existing.registry()
     if live is None:
         return False
-    checker = getattr(live, "is_applied", None)
+    checker = getattr(live, "claim_is_effective", None)
     if checker is None:
         return True  # 非 Registry 的占用者无法判定，保守认为有效
     try:
@@ -120,30 +126,23 @@ def claim_target(
         existing = _CLAIMS.get(key)
         live = existing.registry() if existing is not None else None
 
-    blocked = False
-    stale_reason = ""
-    if existing is not None:
-        if live is not None and live is not registry:
-            if _claim_is_effective(existing):
-                return False, _conflict_reason(existing.owner, owner)
-            # 占用方仍在但补丁已失效：占用记录陈旧，允许接管。
-        elif live is None:
-            # 占用方已消失：若目标上仍有补丁痕迹，需人工确认后再接管。
-            if is_still_patched():
-                stale_reason = (
-                    f"target has a stale claim from owner={existing.owner} "
-                    "and is still patched; revert or clear claim first"
-                )
-                blocked = True
+    if existing is None:
+        _CLAIMS[key] = _Claim(owner, weakref.ref(registry), key, target)
+        return True, ""
+
+    if live is not None and live is not registry:
+        if _claim_is_effective(existing):
+            return False, _conflict_reason(existing.owner, owner)
+        # 占用方仍在但补丁已失效：占用记录陈旧，允许接管。
+    elif live is None:
+        # 占用方已消失：若目标上仍有补丁痕迹，需人工确认后再接管。
+        if is_still_patched():
+            return False, (
+                f"target has a stale claim from owner={existing.owner} "
+                "and is still patched; revert or clear claim first"
+            )
 
     with _LOCK:
-        existing = _CLAIMS.get(key)
-        if existing is not None:
-            live = existing.registry()
-            if live is not None and live is not registry and _claim_is_effective(existing):
-                return False, _conflict_reason(existing.owner, owner)
-            if blocked:
-                return False, stale_reason
         _CLAIMS[key] = _Claim(owner, weakref.ref(registry), key, target)
         return True, ""
 

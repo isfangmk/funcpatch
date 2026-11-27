@@ -129,6 +129,9 @@ funcpatch hash --package mypatches
 - `get_original(target) -> Callable | None`：原始底层函数（描述符返回其 `__func__`/`fget` 等）。
 - `get_wrapper(target)`：当前生效的包装器/替代函数。
 - `is_applied(target) -> bool`、`targets() -> list[str]`、`specs_for_module()`、`specs_for_target()`。
+  `is_applied` 反映补丁**当前是否真的生效**：除查内部记录外，还核对目标属性上
+  是否仍带补丁标记——目标模块被 `importlib.reload` 重建后旧补丁已失效，
+  此时返回 `False`。
 - `plan(*, include_diff=False) -> list[dict]`：预演每个目标（含占用冲突检查）。注意：hash 校验可能需要
   import 目标模块，该 import 可能触发已注册的后导入钩子。
   `include_diff=True` 时，额外为 `replace` 模式的补丁生成 unified diff（键 `diff`），
@@ -187,10 +190,13 @@ funcpatch hash --package mypatches
 
 ## 校验
 
-- `validate(specs, owner=None, *, check_signature=False) -> list[ValidationResult]`
+- `validate(specs, owner=None, *, check_signature=False, config=None) -> list[ValidationResult]`
 - `validate_spec(spec, owner=None, *, check_signature=False) -> ValidationResult`
   - `check_signature=True` 时检查替代实现参数个数，不匹配记录 warning 并发
     `FunCPatchWarning`，不影响 `ok`（借鉴 pluggy `_verify_hook`）。
+  - `config` 给出时，按目标解析实际生效的 owner（`[targets]` 精确指定优先于 `[default]`）
+    并检查它是否命中某条 spec：部署配置了 owner 却没有任何补丁命中时会报出
+    `owner mismatch`，与 `plan()` 的结论一致。未配置 owner 时不作为问题。
   - `ValidationResult.warnings` / `.to_dict()["warnings"]` 承载警告信息。
 
 ## 审计
@@ -213,5 +219,6 @@ funcpatch plan --package mypatches      # 预演
 funcpatch plan --package mypatches --diff  # 预演并展示源码差异
 funcpatch claims                        # 查看进程占用
 funcpatch validate --package mypatches  # 校验
+funcpatch validate --config funcpatch.toml  # 校验并检查 owner 命中
 funcpatch hash --package mypatches      # 批量计算源码/依赖 hash
 ```

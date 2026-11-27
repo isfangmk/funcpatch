@@ -785,6 +785,26 @@ class Registry:
         current = get_attribute(applied.parent, applied.attr)
         return unwrap_descriptor(current, applied.spec.property_part)
 
+    def claim_is_effective(self, target: str) -> bool:
+        """本 Registry 对该目标的占用是否仍然有效。
+
+        供进程级占用表判断一条记录是不是陈旧的：
+
+        - 从未记录过应用 → 占用尚未生效或已释放，不算有效占用；
+        - 记录过应用且补丁痕迹仍在 → 有效；
+        - 记录过应用但补丁痕迹已消失（如目标模块被 reload）→ 陈旧，
+          允许新实例接管。
+
+        没有记录过应用但占用已存在（例如安装中途失败）的情况按"无效"处理，
+        这样接管不会被一个半成品占用挡住。
+        """
+        applied = self._applied.get(target)
+        if applied is None:
+            return False
+        if applied.spec.mode == "add":
+            return hasattr(applied.parent, applied.attr)
+        return is_marked(target, applied.spec.property_part)
+
     def is_applied(self, target: str) -> bool:
         """目标当前是否真的被本 Registry 的补丁覆盖。
 
@@ -792,13 +812,7 @@ class Registry:
         目标模块被 reload 后，旧补丁随旧模块对象一并失效，
         此时内部记录仍在，但补丁实际已不生效——只查记录会给出错误结论。
         """
-        if target not in self._applied:
-            return False
-        applied = self._applied[target]
-        if applied.spec.mode == "add":
-            # add 模式没有标记可查，改为核对属性是否仍在宿主对象上。
-            return hasattr(applied.parent, applied.attr)
-        return is_marked(target)
+        return self.claim_is_effective(target)
 
     # ------------------------------------------------------------------ 预演
 

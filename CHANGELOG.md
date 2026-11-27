@@ -21,9 +21,28 @@
   （存在则拒绝，避免覆盖主分支实现），回滚时删除该属性，事务回滚同样正确还原。
 - CLI 新增 `funcpatch hash` 子命令：批量输出每条补丁的目标源码 hash 与依赖闭包 hash，
   供刷新 `expect_hash` / `expect_deps_hash`。
+- `validate(specs, config=...)`：按目标解析实际生效的 owner（`[targets]` 精确指定优先于
+  `[default]`）并检查是否命中某条补丁。此前 `validate()` 只做与 owner 选择无关的静态检查，
+  部署配置了 owner 却没有任何补丁命中时仍报通过，与 `plan()` 的结论也相互矛盾。
+- CLI 的 `funcpatch validate` 新增 `--config` 选项，并按配置检查 owner 命中。
 
 ### 修复
 
+- `mode="add"` 不再绕过部署护栏：此前 add 模式在解析目标后直接安装属性，
+  跳过了其它模式都会执行的版本约束（`requires`）、`enabled` 开关与废弃告警。
+  现抽取 `_check_version_guards` 由三种模式共用，add 模式另补 `enabled` 检查。
+- `mode="add"` 的校验与预演在目标模块不可导入时不再抛出 `ModuleNotFoundError`
+  中断整批检查，改为报告 `target module import failed: <原因>`。
+- 已打补丁目标的版本校验不再被替代实现污染：补丁生效后目标位置上的对象已是
+  替代实现，直接取源码得到的是替代实现的 hash，导致版本校验误报 "hash mismatch"
+  （原实现其实没变过），且 `funcpatch hash` 采集到替代实现的 hash，填进 `expect_hash`
+  后补丁永远无法应用。现从占用该目标的 Registry 取出原实现再比对。
+- 目标已被其它 owner 占用时，拒绝原因由真实的占用冲突给出，不再被
+  "hash mismatch" 掩盖而误导排查；`plan` 与 `apply` 对同一次冲突给出相同原因。
+- 模块被 `importlib.reload` 重建后，补丁随旧模块对象一并失效，但诊断与占用状态
+  仍按旧状态报告：`is_applied` 仍报 True，新实例也无法接管目标。现核对目标属性上
+  是否仍带补丁标记来判断是否真的生效；占用方补丁已失效时，其占用视为陈旧，
+  新实例可接管。
 - 目标模块导入失败时，部署前校验不再抛出异常中断整批检查，改为报告
   `target module import failed: <原因>`（此前只有 `resolve_path` 失败被捕获，
   模块本身的导入异常会直接冒泡）。
@@ -44,9 +63,10 @@
 
 ### 测试
 
-- 共 313 个测试；覆盖率 94%。
+- 共 333 个测试；覆盖率 94%。
 - 补充桥接层 50 个透传名称的身份绑定测试，替代原先仅做存在性检查的弱断言。
 - 补充依赖闭包 hash、add 模式、diff 预览、示例可运行性等新能力的测试。
+- 补充 add 模式护栏、hash 污染、owner 命中检查、模块 reload 后状态等场景的回归测试。
 - 修正若干恒真断言与只验证"不抛异常"的弱断言。
 - 消除线程测试中的 `sleep` 同步，改为事件驱动，避免慢环境下的偶发失败。
 

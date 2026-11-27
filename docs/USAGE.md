@@ -108,19 +108,21 @@ export FUNC_PATCH_ENABLED=false  # 不应用任何补丁；缺省为开启
 `expect_hash` 是目标函数的源码 hash。核心函数被改过后 hash 变化，补丁会被**拒绝并告警**，而不是静默产生错误行为。
 
 ```python
-from funcpatch import source_hash
+from funcpatch import get_base, source_hash
 from app.core.config import Settings
 
-print(source_hash(Settings.build_headers))  # 填入 expect_hash
+# get_base 描述符安全：普通方法、classmethod、staticmethod 都能取到底层函数。
+# 直接写 Settings.build_headers 时，若它是 classmethod 会取到绑定方法，取不到源码。
+print(source_hash(get_base(Settings.build_headers)))  # 填入 expect_hash
 ```
 
 `expect_deps_hash` 进一步覆盖目标调用的**同模块依赖**（通过全局名引用、定义在同一模块的
 函数/类）。主分支改了被调用的 helper 时，仅靠 `expect_hash` 发现不了，补丁会静默跑在旧假设上：
 
 ```python
-from funcpatch import dependency_hash
+from funcpatch import dependency_hash, get_base
 
-expect_deps_hash = dependency_hash(Settings.build_headers)
+expect_deps_hash = dependency_hash(get_base(Settings.build_headers))
 ```
 
 批量查看当前值：
@@ -129,12 +131,16 @@ expect_deps_hash = dependency_hash(Settings.build_headers)
 funcpatch hash --package mypatches
 ```
 
+`funcpatch hash` 给出的是**主分支原实现**的 hash：即使目标此刻已被某个补丁接管，
+采集到的仍是原实现的值，可以直接填进 `expect_hash`。
+
 ## 三种替换模式
 
 - `mode="replace"`（默认）：完全替换函数实现，函数体由补丁拥有。适合大量修改。
 - `mode="wrap"`：包一层，可调用原函数（wrapt.FunctionWrapper 语义）。
 - `mode="add"`：给目标类添加主分支里**原本不存在**的方法或属性。目标属性必须原本不存在
-  （存在则拒绝，避免覆盖主分支实现），回滚时删除该属性。
+  （存在则拒绝，避免覆盖主分支实现），回滚时删除该属性。与其它模式一样受
+  `requires`、`enabled`、`deprecated` 约束。
 
 ```python
 def wrapper(original, instance, args, kwargs):
@@ -280,10 +286,19 @@ reg.revert_all()
 
 ```python
 from funcpatch import validate, discover_all
+from funcpatch.config import load_config
 
-results = validate(discover_all())
+# 传入 config 才会检查 owner 命中：部署配置了 owner 却没有任何补丁命中时，
+# 这里报出 owner mismatch，与 plan() 的结论一致。
+results = validate(discover_all(), config=load_config())
 failed = [r.to_dict() for r in results if not r.ok]
 assert not failed, failed
+```
+
+命令行等价物会按配置读取 owner：
+
+```bash
+funcpatch validate --config funcpatch.toml
 ```
 
 `Registry.plan()` 返回每个目标"将会做什么"的列表（selected / skipped / would_apply / reason）。

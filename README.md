@@ -113,7 +113,7 @@ pip install -e ".[dev]"
 
 ```python
 # mypatches.py
-from funcpatch import PatchSpec, dependency_hash, source_hash
+from funcpatch import PatchSpec, dependency_hash, get_base, source_hash
 
 from app.core.config import Settings
 
@@ -123,15 +123,19 @@ def my_build_headers(self, cookie=None):
     ...
 
 
+# get_base 描述符安全：普通方法、classmethod、staticmethod 都能取到底层函数。
+# 直接写 Settings.build_headers 对 classmethod 会取到绑定方法，取不到源码。
+_target = get_base(Settings.build_headers)
+
 patch = PatchSpec(
     owner="client_a",
     target_module="app.core.config",
     target_attr="Settings.build_headers",
     replacement=my_build_headers,
     # 可选：主分支函数被改过则拒绝应用。用 source_hash 取当前实现的 16 位 hash。
-    expect_hash=source_hash(Settings.build_headers.__func__),
+    expect_hash=source_hash(_target),
     # 可选：连同被调用的同模块 helper 一起校验，主分支改 helper 也拒绝应用。
-    expect_deps_hash=dependency_hash(Settings.build_headers.__func__),
+    expect_deps_hash=dependency_hash(_target),
 )
 
 # 添加主分支里原本不存在的方法
@@ -177,9 +181,12 @@ export FUNC_PATCH_ENABLED=false
 
 ```python
 from funcpatch import discover_all, validate
+from funcpatch.config import load_config
 
 specs = discover_all()
-results = validate(specs)
+# 传入 config 才会检查 owner 命中：部署配置了 owner 却没有任何补丁命中时，
+# 这里会报出 owner mismatch，而不是等到运行时才发现一条补丁都没生效。
+results = validate(specs, config=load_config())
 assert all(r.ok for r in results), [r.to_dict() for r in results if not r.ok]
 ```
 
@@ -197,7 +204,7 @@ CLI 部署诊断（只读）：
 funcpatch plan                # 预演补丁，检查目标/hash/owner 是否可应用
 funcpatch plan --diff         # 同上，并展示每个函数替换前后的源码差异
 funcpatch claims              # 查看当前进程的目标占用
-funcpatch validate            # 校验所有补丁 spec
+funcpatch validate            # 校验所有补丁 spec（含 owner 命中检查）
 funcpatch hash                # 批量计算目标源码/依赖 hash，供刷新 expect_hash
 ```
 
