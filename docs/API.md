@@ -180,7 +180,8 @@ funcpatch hash --package mypatches
 
 ## 诊断
 
-- `is_patched(target, registry=None) -> bool`：目标是否已打补丁；给出 `registry` 时以其状态为准。
+- `is_patched(target, registry=None) -> bool`：目标是否已打补丁；给出 `registry` 时以其状态为准
+  （该状态反映补丁当前是否真的生效）。
 - `get_applied_info(target) -> dict | None`：补丁标记信息，含 `owner` / `target` / `targets`
   （共用同一 replacement 的全部目标）；未打补丁返回 `None`。
 - `get_wrapper(target)`：当前生效的包装器/替代函数。
