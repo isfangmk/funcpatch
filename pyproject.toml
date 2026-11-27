@@ -44,7 +44,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests"]
+pythonpath = ["src", "tests", "tools"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # 固定临时目录到仓库内：部分环境下的系统临时目录可能不可写，
@@ -62,7 +62,8 @@ select = ["E", "F", "I", "B", "UP"]
 ignore = ["E501"]
 
 [tool.basedpyright]
-include = ["src", "tests"]
+include = ["src", "tests", "tools"]
+extraPaths = ["src", "tools"]
 typeCheckingMode = "standard"
 pythonVersion = "3.10"
 reportDeprecated = true

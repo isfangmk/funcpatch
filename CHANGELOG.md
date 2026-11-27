@@ -5,7 +5,9 @@
 
 ## [0.1.0] - 2026-11-27
 
-> 首次公开发布。以下内容按开发顺序汇总：最早的框架搭建列在末尾，其后的能力演进与修复依次向前。
+> 首次公开发布。
+>
+> 本节汇总本次发布的全部内容：先是新增能力与修复，随后是开发过程中逐步成形的框架基础（按演进顺序排列，最早的列在末尾）。
 
 ### 新增
 
@@ -101,6 +103,12 @@
 - 修正 CHANGELOG 中 FastAPI 示例的目录名，并补齐缺失的版本链接定义。
 
 ### 工具链
+
+- 发布流程改由 GitHub Actions 完成：推送 tag 触发校验版本一致性、重跑质量门、
+  发布到 PyPI 并创建 GitHub Release。
+- 新增 `tools/changelog_section.py`：从 CHANGELOG 提取指定版本的条目，
+  自动生成规范的 Release 说明（项目介绍 + 变更摘要 + 文档链接）。
+  此前 Release 说明只有自动生成的 "Full Changelog" 链接。
 
 - CI 拆分为 lint / test / package 三个作业，lint 作业独立于 Python 版本矩阵；
   新增示例可运行性校验（`examples.basic.run`、`examples.modes.walkthrough`）。
