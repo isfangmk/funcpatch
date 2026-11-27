@@ -24,6 +24,8 @@ CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 _VERSION_HEADING = re.compile(r"^## \[(?P<version>[^\]]+)\](?P<rest>.*)$", re.M)
 # 二级小节标题
 _SECTION_HEADING = re.compile(r"^### ", re.M)
+# 文末的版本链接定义行，形如 "[0.1.0]: https://github.com/..."
+_LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+.*$\n?", re.M)
 
 
 def extract(version: str, changelog: str, *, full: bool = False) -> str:
@@ -31,7 +33,7 @@ def extract(version: str, changelog: str, *, full: bool = False) -> str:
 
     full=False 时取版本标题、引言与紧随其后的第一个小节（通常是"新增"），
     作为 Release 说明的首屏；full=True 时取该版本的全部内容
-    （不含下个版本的标题）。
+    （不含下个版本的标题，也不含文末的版本链接定义）。
     """
     matches = list(_VERSION_HEADING.finditer(changelog))
     for index, match in enumerate(matches):
@@ -40,6 +42,9 @@ def extract(version: str, changelog: str, *, full: bool = False) -> str:
         start = match.start()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(changelog)
         section = changelog[start:end].rstrip() + "\n"
+        # 去掉文末的版本链接定义行（形如 "[0.1.0]: https://..."）——
+        # 那是 CHANGELOG 自己的引用语法，放进 Release 说明里没有意义。
+        section = _LINK_DEFINITION.sub("", section).rstrip() + "\n"
         if full:
             return section
         # 摘要：保留标题与引言，截到第二个 "### " 之前（即第一个小节结束处）

@@ -83,6 +83,19 @@ def test_extract_real_changelog_has_current_version():
     assert "### 新增" in section
 
 
+def test_extract_excludes_link_definitions():
+    """文末的版本链接定义不应进入提取结果。
+
+    那是 CHANGELOG 自己的引用语法，放进 Release 说明里只会显示成裸链接。
+    """
+    repo = Path(__file__).resolve().parent.parent
+    text = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    section = extract("0.1.0", text, full=True)
+    assert "[0.1.0]: https://" not in section
+    # 但正文里对 CHANGELOG 的引用不受影响
+    assert "CHANGELOG" in section or "变更" in section
+
+
 def test_script_cli_outputs_section(capsys):
     """命令行入口应输出提取到的条目。"""
     from changelog_section import main
