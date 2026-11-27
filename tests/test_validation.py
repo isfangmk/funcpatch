@@ -20,6 +20,7 @@ from funcpatch import (  # noqa: E402
     Registry,
     SelectionConfig,
     check_requires,
+    validate,
     validate_spec,
 )
 from funcpatch._claims import clear_all  # noqa: E402
@@ -185,3 +186,55 @@ def test_deprecated_warns_in_validate():
         result = validate_spec(spec)
     assert result.ok
     assert any("deprecated" in w for w in result.warnings)
+
+
+# ------------------------------------------------------------------ owner 命中检查
+
+
+def test_validate_with_config_reports_owner_mismatch():
+    """配置的 owner 没有该目标的补丁时，校验应报出问题。
+
+    此前 validate() 不做 owner 选择检查，部署配置了 owner 却没有任何补丁命中时
+    仍然报通过，直到运行时才发现一条补丁都没生效。
+    """
+    spec = PatchSpec("client_b", "_target", "greet", lambda name: name)
+    cfg = SelectionConfig("client_a", {}, True)
+    results = validate([spec], config=cfg)
+    assert results[0].ok is False
+    assert any("owner mismatch" in p for p in results[0].problems)
+
+
+def test_validate_with_config_accepts_matching_owner():
+    """owner 命中时校验应通过。"""
+    spec = PatchSpec("client_a", "_target", "greet", lambda name: name)
+    cfg = SelectionConfig("client_a", {}, True)
+    results = validate([spec], config=cfg)
+    assert results[0].ok is True
+    assert results[0].problems == []
+
+
+def test_validate_with_config_respects_target_specific_owner():
+    """[targets] 精确指定的 owner 优先于 [default]。"""
+    spec = PatchSpec("client_b", "_target", "greet", lambda name: name)
+    cfg = SelectionConfig("client_a", {"_target:greet": "client_b"}, True)
+    results = validate([spec], config=cfg)
+    assert results[0].ok is True
+
+
+def test_validate_without_owner_config_is_not_a_problem():
+    """未配置 owner 时本就不应用补丁，不应报为问题。"""
+    spec = PatchSpec("client_b", "_target", "greet", lambda name: name)
+    cfg = SelectionConfig("", {}, True)
+    results = validate([spec], config=cfg)
+    assert results[0].ok is True
+
+
+def test_validate_config_agrees_with_plan():
+    """校验与预演对同一份配置必须给出相同结论。"""
+    spec = PatchSpec("client_b", "_target", "greet", lambda name: name)
+    cfg = SelectionConfig("client_a", {}, True)
+    results = validate([spec], config=cfg)
+    plan = Registry(cfg, [spec]).plan()[0]
+    assert results[0].ok is False
+    assert plan["would_apply"] is False
+    assert plan["reason"] == "no selected owner"

@@ -17,6 +17,7 @@ import wrapt.patches as wrapt_patches  # type: ignore[import-untyped]
 from ._descriptors import unwrap_descriptor
 from ._requirements import check_requires
 from ._targeting import resolve_original
+from .config import SelectionConfig
 from .exceptions import DeprecatedTargetWarning, FunCPatchWarning
 from .spec import PatchSpec, dependency_hash, source_hash
 
@@ -255,7 +256,29 @@ def validate_spec(
 
 
 def validate(
-    specs: list[PatchSpec], owner: str | None = None, *, check_signature: bool = False
+    specs: list[PatchSpec],
+    owner: str | None = None,
+    *,
+    check_signature: bool = False,
+    config: SelectionConfig | None = None,
 ) -> list[ValidationResult]:
-    """批量校验，返回结果列表（不做任何修改）。"""
-    return [validate_spec(spec, owner, check_signature=check_signature) for spec in specs]
+    """批量校验，返回结果列表（不做任何修改）。
+
+    owner 显式给出时，逐条检查该 spec 是否属于所选 owner。
+    config 给出时，按目标解析实际生效的 owner（[targets] 精确指定优先于
+    [default]），并检查它是否命中了某个 spec——部署配置了 owner 却没有任何
+    补丁命中时，这里会报出问题，避免"校验通过但一条补丁都没生效"。
+    """
+    results = [validate_spec(spec, owner, check_signature=check_signature) for spec in specs]
+    if config is None:
+        return results
+
+    for result in results:
+        selected = config.owner_for(result.spec.target)
+        if not selected:
+            # 未配置 owner：fail-safe，本就不应用任何补丁，不作为问题。
+            continue
+        if result.spec.owner != selected:
+            result.ok = False
+            result.problems.append(f"owner mismatch: selected={selected} spec={result.spec.owner}")
+    return results

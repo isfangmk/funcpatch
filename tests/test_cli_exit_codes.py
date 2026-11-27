@@ -41,6 +41,18 @@ def test_cli_validate_returns_one_on_bad_spec(monkeypatch, capsys):
     capsys.readouterr()
 
 
+def test_cli_validate_reports_owner_mismatch(monkeypatch, capsys):
+    """配置的 owner 没有该目标的补丁时，CLI validate 应返回非零。"""
+    spec = PatchSpec("client_b", "_target", "greet", lambda n: n)
+    monkeypatch.setattr(cli_mod, "discover_all", lambda *a, **k: [spec])
+    monkeypatch.setattr(
+        cli_mod, "load_config", lambda path=None: SelectionConfig("client_a", {}, True)
+    )
+    assert cli_mod.main(["validate"]) == 1
+    out = capsys.readouterr().out
+    assert "owner mismatch" in out
+
+
 def test_cli_claims_returns_zero(capsys):
     assert cli_mod.main(["claims"]) == 0
     capsys.readouterr()
